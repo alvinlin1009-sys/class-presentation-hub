@@ -327,7 +327,7 @@
       }
       return {
         embedUrl: `https://docs.google.com/presentation/d/${docId}/embed?start=false&loop=false&rm=minimal`,
-        newTabUrl: `https://docs.google.com/presentation/d/${docId}/present`
+        newTabUrl: `https://docs.google.com/presentation/d/${docId}/edit`
       };
     }
 
