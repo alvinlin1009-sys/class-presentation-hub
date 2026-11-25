@@ -334,27 +334,37 @@ async function fetchGdriveFolderFiles(folderId) {
 
   const files = [];
   const entryRegex =
-    /<div[^>]*class="flip-entry"[^>]*id="entry-([^"]+)"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>[\s\S]*?<div[^>]*class="flip-entry-title"[^>]*>([\s\S]*?)<\/div>/g;
+    /<div[^>]*class="flip-entry"[^>]*id="entry-([^"]+)"[^>]*>([\s\S]*?)<div[^>]*class="flip-entry-title"[^>]*>([\s\S]*?)<\/div>/g;
   let match;
   while ((match = entryRegex.exec(html)) !== null) {
     const fileId = match[1].trim();
-    const rawHref = decodeHtml(match[2].trim());
+    const entryBody = match[2];
+    const hrefMatch = entryBody.match(/<a[^>]*href="([^"]+)"/);
+    const rawHref = hrefMatch ? decodeHtml(hrefMatch[1].trim()) : '';
+    const mimeMatch = entryBody.match(/\/type\/([^"'\s]+)/);
+    const mimeType = mimeMatch ? mimeMatch[1].toLowerCase() : '';
     const fileName = decodeHtml(match[3].replace(/<[^>]+>/g, '').trim());
     if (!fileId || !fileName) continue;
 
     const lowerName = fileName.toLowerCase();
     let type = 'link';
     let url = rawHref;
-    if (rawHref.includes('docs.google.com/presentation/')) {
+    if (
+      rawHref.includes('docs.google.com/presentation/') ||
+      mimeType.includes('google-apps.presentation')
+    ) {
       type = 'gslides';
       url = `https://docs.google.com/presentation/d/${fileId}/present`;
-    } else if (lowerName.endsWith('.pdf')) {
+    } else if (lowerName.endsWith('.pdf') || mimeType.includes('application/pdf')) {
       type = 'pdf';
       url = `https://drive.google.com/file/d/${fileId}/preview`;
     } else if (
       lowerName.endsWith('.pptx') ||
       lowerName.endsWith('.ppt') ||
-      lowerName.endsWith('.ppsx')
+      lowerName.endsWith('.ppsx') ||
+      mimeType.includes('presentationml') ||
+      mimeType.includes('ms-powerpoint') ||
+      mimeType.includes('powerpoint')
     ) {
       type = 'pptx';
       url = `https://drive.google.com/file/d/${fileId}/preview`;
