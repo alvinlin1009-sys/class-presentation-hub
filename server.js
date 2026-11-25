@@ -1197,6 +1197,202 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 7b. Preview & Import Public Google Drive Folder
+  if (req.method === 'POST' && pathname === '/api/gdrive-preview') {
+    try {
+      const body = await parseJsonBody(req);
+      const rawUrl = String(body.folderUrl || '').trim();
+      const classId = body.classId || queryClassId || (db.classes[0] && db.classes[0].id);
+      const subjectId = body.subjectId || querySubjectId || (db.subjects[0] && db.subjects[0].id);
+      const topicId = body.topicId || queryTopicId || '';
+
+      const folderMatch =
+        rawUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/) ||
+        rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
+        rawUrl.match(/^([a-zA-Z0-9_-]{15,})$/);
+      if (!folderMatch) {
+        sendJson(res, 400, {
+          error: '請貼上正確的 Google 雲端硬碟資料夾網址（例如 https://drive.google.com/drive/folders/...）'
+        });
+        return;
+      }
+
+      const folderId = folderMatch[1];
+      const embedRes = await fetch(
+        `https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(folderId)}#list`,
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+          }
+        }
+      );
+
+      if (!embedRes.ok || embedRes.url.includes('accounts.google.com')) {
+        sendJson(res, 400, {
+          error:
+            '無法讀取該資料夾！請確認資料夾共用權限已設為「知道連結的任何人皆可檢視」。'
+        });
+        return;
+      }
+
+      const html = await embedRes.text();
+      if (html.includes('accounts.google.com/ServiceLogin') || html.includes('Sign in')) {
+        sendJson(res, 400, {
+          error:
+            '此資料夾目前需要登入才能存取，請在 Google 雲端硬碟將資料夾設為「知道連結的任何人皆可檢視」。'
+        });
+        return;
+      }
+
+      const decodeHtml = (s) =>
+        String(s || '')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'");
+
+      const files = [];
+      const entryRegex =
+        /<div[^>]*class="flip-entry"[^>]*id="entry-([^"]+)"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>[\s\S]*?<div[^>]*class="flip-entry-title"[^>]*>([\s\S]*?)<\/div>/g;
+      let match;
+      while ((match = entryRegex.exec(html)) !== null) {
+        const fileId = match[1].trim();
+        const rawHref = decodeHtml(match[2].trim());
+        const fileName = decodeHtml(match[3].replace(/<[^>]+>/g, '').trim());
+        if (!fileId || !fileName) continue;
+
+        const lowerName = fileName.toLowerCase();
+        let type = 'link';
+        let url = rawHref;
+        if (rawHref.includes('docs.google.com/presentation/')) {
+          type = 'gslides';
+          url = `https://docs.google.com/presentation/d/${fileId}/present`;
+        } else if (lowerName.endsWith('.pdf')) {
+          type = 'pdf';
+          url = `https://drive.google.com/file/d/${fileId}/preview`;
+        } else if (
+          lowerName.endsWith('.pptx') ||
+          lowerName.endsWith('.ppt') ||
+          lowerName.endsWith('.ppsx')
+        ) {
+          type = 'pptx';
+          url = `https://drive.google.com/file/d/${fileId}/preview`;
+        } else if (rawHref.includes('drive.google.com/file/d/')) {
+          type = 'link';
+          url = `https://drive.google.com/file/d/${fileId}/preview`;
+        }
+
+        files.push({ fileId, fileName, type, url });
+      }
+
+      if (files.length === 0) {
+        sendJson(res, 400, {
+          error:
+            '資料夾內沒有找到檔案（或資料夾權限尚未設為「知道連結的任何人皆可檢視」）。'
+        });
+        return;
+      }
+
+      const board = getOrCreateBoard(classId, subjectId, topicId);
+      const sortedRosterByNameLen = [...board].sort(
+        (a, b) => (b.presenterName || '').length - (a.presenterName || '').length
+      );
+      const usedStudentIds = new Set();
+
+      const previewItems = files.map((f) => {
+        let matchedStudent = null;
+        // 1. Match by full name inside filename
+        for (const s of sortedRosterByNameLen) {
+          if (
+            s.presenterName &&
+            s.presenterName !== '未具名' &&
+            f.fileName.includes(s.presenterName)
+          ) {
+            matchedStudent = s;
+            break;
+          }
+        }
+        // 2. Fallback: match by seat number (e.g. 01, 1號, 01_, 1-)
+        if (!matchedStudent) {
+          const numMatches = f.fileName.match(/(?:^|[^\d])(\d{1,2})(?=[^\d]|$)/g) || [];
+          for (const token of numMatches) {
+            const num = parseInt(token.replace(/[^\d]/g, ''), 10);
+            if (!Number.isNaN(num)) {
+              const foundBySeat = board.find(
+                (s) =>
+                  s.groupOrSeat &&
+                  parseInt(String(s.groupOrSeat).replace(/[^\d]/g, ''), 10) === num &&
+                  !usedStudentIds.has(s.id)
+              );
+              if (foundBySeat) {
+                matchedStudent = foundBySeat;
+                break;
+              }
+            }
+          }
+        }
+
+        if (matchedStudent) usedStudentIds.add(matchedStudent.id);
+        return {
+          ...f,
+          matchedStudentId: matchedStudent ? matchedStudent.id : ''
+        };
+      });
+
+      sendJson(res, 200, { ok: true, folderId, items: previewItems });
+    } catch (err) {
+      sendJson(res, 400, { error: `讀取資料夾失敗: ${err.message}` });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/gdrive-import') {
+    try {
+      const body = await parseJsonBody(req);
+      const classId = body.classId || queryClassId || (db.classes[0] && db.classes[0].id);
+      const subjectId = body.subjectId || querySubjectId || (db.subjects[0] && db.subjects[0].id);
+      const topicId = body.topicId || queryTopicId || '';
+      const mappings = Array.isArray(body.mappings) ? body.mappings : [];
+      const board = getOrCreateBoard(classId, subjectId, topicId);
+
+      let importedCount = 0;
+      for (const m of mappings) {
+        if (!m.studentId || !m.url) continue;
+        const item = board.find((p) => p.id === m.studentId);
+        if (!item) continue;
+
+        deleteStoredFileIfExist(item.storedFileName);
+        item.fileUrl = '';
+        item.storedFileName = '';
+        item.originalFileName = '';
+        item.fileSize = 0;
+        item.url = m.url;
+        item.type = m.type || 'link';
+        item.title = (m.fileName || '').replace(/\.[^/.]+$/, '');
+        item.openMode = 'embed';
+        item.hasSubmitted = true;
+        if (item.status === 'unsubmitted') {
+          item.status = 'pending';
+        }
+        item.updatedAt = Date.now();
+        importedCount++;
+      }
+
+      saveDB(db);
+      broadcastUpdate('roster_updated', classId, subjectId, topicId);
+      sendJson(res, 200, {
+        ok: true,
+        importedCount,
+        presentations: board
+      });
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+    return;
+  }
+
   // 8. File Upload
   if (req.method === 'POST' && pathname === '/api/upload') {
     try {

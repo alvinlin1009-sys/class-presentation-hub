@@ -318,6 +318,15 @@
       };
     }
 
+    const driveFileMatch = rawUrl.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (driveFileMatch) {
+      const fileId = driveFileMatch[1];
+      return {
+        embedUrl: `https://drive.google.com/file/d/${fileId}/preview`,
+        newTabUrl: `https://drive.google.com/file/d/${fileId}/view`
+      };
+    }
+
     if (rawUrl.includes('canva.com/design/')) {
       const baseCanva = rawUrl.split('?')[0].replace(/\/(edit|view).*$/, '');
       return {
@@ -2441,6 +2450,150 @@
       }
     });
     els.runShuffleBtn.addEventListener('click', shuffleAllOrder);
+
+    // Modal 5: Google Drive Folder Batch Import
+    const openGdriveImportBtn = document.getElementById('openGdriveImportBtn');
+    const gdriveImportModal = document.getElementById('gdriveImportModal');
+    const gdriveFolderUrlInput = document.getElementById('gdriveFolderUrlInput');
+    const gdriveFetchBtn = document.getElementById('gdriveFetchBtn');
+    const gdrivePreviewSection = document.getElementById('gdrivePreviewSection');
+    const gdriveMatchSummary = document.getElementById('gdriveMatchSummary');
+    const gdrivePreviewList = document.getElementById('gdrivePreviewList');
+    const gdriveConfirmImportBtn = document.getElementById('gdriveConfirmImportBtn');
+
+    let gdrivePendingItems = [];
+
+    if (openGdriveImportBtn && gdriveImportModal) {
+      openGdriveImportBtn.addEventListener('click', () => {
+        gdrivePreviewSection.classList.add('hidden');
+        gdrivePendingItems = [];
+        gdriveImportModal.classList.remove('hidden');
+      });
+
+      gdriveFetchBtn.addEventListener('click', async () => {
+        const folderUrl = gdriveFolderUrlInput.value.trim();
+        if (!folderUrl) {
+          alert('請貼上 Google 雲端資料夾網址！');
+          return;
+        }
+        gdriveFetchBtn.disabled = true;
+        gdriveFetchBtn.textContent = '⏳ 讀取中...';
+        try {
+          const res = await fetch('/api/gdrive-preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              folderUrl,
+              classId: state.currentClassId,
+              subjectId: state.currentSubjectId,
+              topicId: state.currentTopicId
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || '讀取資料夾失敗');
+          }
+
+          gdrivePendingItems = data.items || [];
+          const matchedCount = gdrivePendingItems.filter((i) => i.matchedStudentId).length;
+          gdriveMatchSummary.textContent = `共找到 ${gdrivePendingItems.length} 個檔案，已自動配對 ${matchedCount} 位同學（未自動配對者請於右側手動選擇）：`;
+
+          const sortedStudents = [...state.presentations].sort(compareSeat);
+          gdrivePreviewList.innerHTML = gdrivePendingItems
+            .map((file, idx) => {
+              const icon =
+                file.type === 'gslides'
+                  ? '📊'
+                  : file.type === 'pdf'
+                  ? '📄'
+                  : file.type === 'pptx'
+                  ? '🟧'
+                  : '🔗';
+              const optionsHtml = [
+                '<option value="">-- 略過 / 未配對 --</option>',
+                ...sortedStudents.map((s) => {
+                  const seat = s.groupOrSeat ? `[${s.groupOrSeat}] ` : '';
+                  const sel = s.id === file.matchedStudentId ? 'selected' : '';
+                  return `<option value="${escapeHtml(s.id)}" ${sel}>${escapeHtml(
+                    `${seat}${s.presenterName}`
+                  )}</option>`;
+                })
+              ].join('');
+
+              return `
+                <div class="gdrive-preview-row">
+                  <div class="gdrive-file-info" title="${escapeHtml(file.fileName)}">
+                    ${icon} ${escapeHtml(file.fileName)}
+                  </div>
+                  <select class="gdrive-student-select" data-gdrive-idx="${idx}">
+                    ${optionsHtml}
+                  </select>
+                </div>
+              `;
+            })
+            .join('');
+
+          gdrivePreviewSection.classList.remove('hidden');
+        } catch (err) {
+          alert(err.message || '讀取資料夾失敗');
+        } finally {
+          gdriveFetchBtn.disabled = false;
+          gdriveFetchBtn.textContent = '🔍 讀取資料夾';
+        }
+      });
+
+      gdriveConfirmImportBtn.addEventListener('click', async () => {
+        const selects = gdrivePreviewList.querySelectorAll('[data-gdrive-idx]');
+        const mappings = [];
+        selects.forEach((sel) => {
+          const idx = parseInt(sel.dataset.gdriveIdx, 10);
+          const studentId = sel.value;
+          const file = gdrivePendingItems[idx];
+          if (studentId && file) {
+            mappings.push({
+              studentId,
+              fileId: file.fileId,
+              fileName: file.fileName,
+              type: file.type,
+              url: file.url
+            });
+          }
+        });
+
+        if (mappings.length === 0) {
+          alert('請至少為一個檔案選擇對應的同學！');
+          return;
+        }
+
+        gdriveConfirmImportBtn.disabled = true;
+        gdriveConfirmImportBtn.textContent = '⏳ 匯入中...';
+        try {
+          const res = await fetch('/api/gdrive-import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              classId: state.currentClassId,
+              subjectId: state.currentSubjectId,
+              topicId: state.currentTopicId,
+              mappings
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || '匯入失敗');
+          if (Array.isArray(data.presentations)) {
+            state.presentations = data.presentations;
+          }
+          gdriveImportModal.classList.add('hidden');
+          renderAll();
+          showToast(`✅ 已成功從雲端資料夾匯入 ${data.importedCount} 位同學的簡報！`);
+        } catch (err) {
+          alert(err.message || '匯入失敗');
+        } finally {
+          gdriveConfirmImportBtn.disabled = false;
+          gdriveConfirmImportBtn.textContent = '✅ 確認一鍵匯入已配對簡報';
+        }
+      });
+    }
 
     // Fullscreen Viewer Controls
     els.viewerReloadBtn.addEventListener('click', () => {

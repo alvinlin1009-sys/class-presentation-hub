@@ -1900,6 +1900,77 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Google Drive Folder Import Modal */
+.gdrive-url-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.gdrive-url-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  font-size: 0.95rem;
+}
+
+.gdrive-preview-section {
+  margin-top: 16px;
+}
+
+.gdrive-match-summary {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.gdrive-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.gdrive-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
+.gdrive-file-info {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gdrive-student-select {
+  width: 220px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  background: #fff;
+}
+
 .hidden {
   display: none !important;
 }
