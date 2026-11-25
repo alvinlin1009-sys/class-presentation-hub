@@ -370,7 +370,7 @@
           icon: '📊',
           label: 'Google 簡報',
           btnClass: 'launch-gslides',
-          btnText: item.openMode === 'newtab' ? '📊 開啟 Google 簡報新分頁' : '📊 全螢幕開啟 Google 簡報'
+          btnText: '📊 用 Google 簡報開啟'
         };
       case 'pdf':
         return {
@@ -1245,9 +1245,9 @@
     markAsPresenting(item.id);
     const { embedUrl, newTabUrl } = resolvePresentationUrls(item);
 
-    if (mode === 'newtab') {
+    if (mode === 'newtab' || (item.type === 'gslides' && !forceMode)) {
       window.open(newTabUrl, '_blank', 'noopener');
-      showToast(`↗️ 已在新分頁開啟「${item.presenterName}」的簡報`);
+      showToast(`📊 已用 Google 簡報開啟「${item.presenterName}」的簡報`);
       return;
     }
 
