@@ -1281,12 +1281,15 @@
     }
   }
 
-  function openFullscreenViewer(item, embedUrl, newTabUrl) {
-    state.activeViewerItem = { item, embedUrl, newTabUrl };
+  function openFullscreenViewer(item, embedUrl, newTabUrl, isPreviewOnly = false) {
+    state.activeViewerItem = { item, embedUrl, newTabUrl, isPreviewOnly };
     els.viewerBadge.textContent = item.groupOrSeat || `#${item.order || ''}`;
     els.viewerPresenter.textContent = item.presenterName;
     const topic = getDisplayTopic(item);
     els.viewerTitle.textContent = topic ? `— ${topic}` : '';
+    if (els.viewerCompleteNextBtn) {
+      els.viewerCompleteNextBtn.classList.toggle('hidden', isPreviewOnly);
+    }
 
     const viewerLoading = document.getElementById('viewerLoading');
     if (viewerLoading) {
@@ -2599,6 +2602,14 @@
               <div class="gdrive-file-info" title="${escapeHtml(file.fileName)}">
                 ${icon} ${escapeHtml(file.fileName)}
               </div>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline"
+                data-preview-unmatched="${idx}"
+                title="預覽此簡報內容以便辨認是哪位同學"
+              >
+                👁️ 預覽
+              </button>
               <select class="gdrive-student-select" data-unmatched-idx="${idx}">
                 ${optionsHtml}
               </select>
@@ -2776,6 +2787,27 @@
           showToast('🗑️ 已解除綁定資料夾');
         }
       });
+
+      if (gdriveUnmatchedList) {
+        gdriveUnmatchedList.addEventListener('click', (e) => {
+          const previewBtn = e.target.closest('[data-preview-unmatched]');
+          if (!previewBtn) return;
+          const idx = parseInt(previewBtn.dataset.previewUnmatched, 10);
+          const file = currentUnmatchedFiles[idx];
+          if (!file) return;
+          const { embedUrl, newTabUrl } = resolvePresentationUrls(file);
+          openFullscreenViewer(
+            {
+              groupOrSeat: '未配對',
+              presenterName: file.fileName,
+              title: '預覽內容辨認同學'
+            },
+            embedUrl,
+            newTabUrl,
+            true
+          );
+        });
+      }
 
       if (gdriveImportUnmatchedBtn) {
         gdriveImportUnmatchedBtn.addEventListener('click', async () => {
