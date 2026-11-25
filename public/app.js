@@ -2558,6 +2558,56 @@
     const gdriveSyncAllBtn = document.getElementById('gdriveSyncAllBtn');
     const gdriveBindingCount = document.getElementById('gdriveBindingCount');
     const gdriveBindingsList = document.getElementById('gdriveBindingsList');
+    const gdriveUnmatchedSection = document.getElementById('gdriveUnmatchedSection');
+    const gdriveUnmatchedList = document.getElementById('gdriveUnmatchedList');
+    const gdriveImportUnmatchedBtn = document.getElementById('gdriveImportUnmatchedBtn');
+    let currentUnmatchedFiles = [];
+
+    function renderUnmatchedFiles(files) {
+      currentUnmatchedFiles = Array.isArray(files) ? files : [];
+      if (!gdriveUnmatchedSection || !gdriveUnmatchedList) return;
+      if (currentUnmatchedFiles.length === 0) {
+        gdriveUnmatchedSection.classList.add('hidden');
+        gdriveUnmatchedList.innerHTML = '';
+        return;
+      }
+
+      const sortedStudents = [...state.presentations].sort(compareSeat);
+      gdriveUnmatchedList.innerHTML = currentUnmatchedFiles
+        .map((file, idx) => {
+          const icon =
+            file.type === 'gslides'
+              ? '📊'
+              : file.type === 'pdf'
+              ? '📄'
+              : file.type === 'pptx'
+              ? '🟧'
+              : '🔗';
+          const optionsHtml = [
+            '<option value="">-- 請選擇同學或組別 --</option>',
+            '<option value="__NEW__">➕ 新增為獨立報告卡片</option>',
+            ...sortedStudents.map((s) => {
+              const seat = s.groupOrSeat ? `[${s.groupOrSeat}] ` : '';
+              return `<option value="${escapeHtml(s.id)}">${escapeHtml(
+                `${seat}${s.presenterName}`
+              )}</option>`;
+            })
+          ].join('');
+
+          return `
+            <div class="gdrive-preview-row">
+              <div class="gdrive-file-info" title="${escapeHtml(file.fileName)}">
+                ${icon} ${escapeHtml(file.fileName)}
+              </div>
+              <select class="gdrive-student-select" data-unmatched-idx="${idx}">
+                ${optionsHtml}
+              </select>
+            </div>
+          `;
+        })
+        .join('');
+      gdriveUnmatchedSection.classList.remove('hidden');
+    }
 
     function renderGdriveBindings() {
       const list = Array.isArray(state.gdriveBindings) ? state.gdriveBindings : [];
@@ -2627,6 +2677,7 @@
           state.presentations = data.presentations;
         }
         renderGdriveBindings();
+        renderUnmatchedFiles(data.unmatchedFiles || []);
         renderAll();
         showToast(
           data.updatedCount > 0
@@ -2693,6 +2744,7 @@
           gdriveFolderUrlInput.value = '';
           if (gdriveFolderLabelInput) gdriveFolderLabelInput.value = '';
           renderGdriveBindings();
+          renderUnmatchedFiles(data.unmatchedFiles || []);
           renderAll();
           showToast(
             `✅ 已綁定資料夾（共 ${data.fileCount || 0} 個檔案，更新 ${data.updatedCount || 0} 位同學）`
@@ -2724,6 +2776,59 @@
           showToast('🗑️ 已解除綁定資料夾');
         }
       });
+
+      if (gdriveImportUnmatchedBtn) {
+        gdriveImportUnmatchedBtn.addEventListener('click', async () => {
+          const selects = gdriveUnmatchedList.querySelectorAll('[data-unmatched-idx]');
+          const mappings = [];
+          selects.forEach((sel) => {
+            const idx = parseInt(sel.dataset.unmatchedIdx, 10);
+            const studentId = sel.value;
+            const file = currentUnmatchedFiles[idx];
+            if (studentId && file) {
+              mappings.push({
+                studentId,
+                fileId: file.fileId,
+                fileName: file.fileName,
+                type: file.type,
+                url: file.url
+              });
+            }
+          });
+          if (mappings.length === 0) {
+            alert('請先為未配對的檔案選擇對應同學或「新增為獨立報告卡片」！');
+            return;
+          }
+          gdriveImportUnmatchedBtn.disabled = true;
+          try {
+            const res = await fetch('/api/gdrive-import', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                classId: state.currentClassId,
+                subjectId: state.currentSubjectId,
+                topicId: state.currentTopicId,
+                mappings
+              })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '匯入失敗');
+            if (Array.isArray(data.presentations)) {
+              state.presentations = data.presentations;
+            }
+            const mappedIds = new Set(mappings.map((m) => m.fileId));
+            renderUnmatchedFiles(
+              currentUnmatchedFiles.filter((f) => !mappedIds.has(f.fileId))
+            );
+            renderAll();
+            showToast(`✅ 已成功匯入 ${data.importedCount} 個指定檔案！`);
+          } catch (err) {
+            alert(err.message || '匯入失敗');
+          } finally {
+            gdriveImportUnmatchedBtn.disabled = false;
+          }
+        });
+      }
     }
 
     // Fullscreen Viewer Controls

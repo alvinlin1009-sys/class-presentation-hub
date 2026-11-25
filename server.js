@@ -368,7 +368,12 @@ async function fetchGdriveFolderFiles(folderId) {
   return files;
 }
 
-function matchFileToStudent(fileName, board, usedStudentIds = new Set()) {
+function matchFileToStudent(fileName, board, usedStudentIds = new Set(), fileId = '', manualMaps = {}) {
+  if (fileId && manualMaps && manualMaps[fileId]) {
+    const manual = board.find((s) => s.id === manualMaps[fileId]);
+    if (manual) return manual;
+  }
+
   const sortedByNameLen = [...board].sort(
     (a, b) => (b.presenterName || '').length - (a.presenterName || '').length
   );
@@ -390,30 +395,50 @@ function matchFileToStudent(fileName, board, usedStudentIds = new Set()) {
       if (foundBySeat) return foundBySeat;
     }
   }
+  // Match 4-5 digit class+seat codes like 20412 -> seat 12
+  const classSeatMatches = fileName.match(/(?:^|[^\d])\d{2,3}(\d{2})(?=[^\d]|$)/g) || [];
+  for (const token of classSeatMatches) {
+    const digits = token.replace(/[^\d]/g, '');
+    const num = parseInt(digits.slice(-2), 10);
+    if (!Number.isNaN(num)) {
+      const foundBySeat = board.find(
+        (s) =>
+          s.groupOrSeat &&
+          parseInt(String(s.groupOrSeat).replace(/[^\d]/g, ''), 10) === num &&
+          !usedStudentIds.has(s.id)
+      );
+      if (foundBySeat) return foundBySeat;
+    }
+  }
   return null;
 }
 
 const activeSyncLocks = new Set();
 async function syncGdriveFoldersForBoard(classId, subjectId, topicId, force = false) {
-  if (!classId || !subjectId || !topicId) return { updatedCount: 0, bindings: [] };
+  if (!classId || !subjectId || !topicId) {
+    return { updatedCount: 0, bindings: [], unmatchedFiles: [] };
+  }
   if (!db.gdriveBindings) db.gdriveBindings = {};
+  if (!db.gdriveManualMaps) db.gdriveManualMaps = {};
   const bKey = getBoardKey(classId, subjectId, topicId);
   const bindings = db.gdriveBindings[bKey];
   if (!Array.isArray(bindings) || bindings.length === 0) {
-    return { updatedCount: 0, bindings: [] };
+    return { updatedCount: 0, bindings: [], unmatchedFiles: [] };
   }
 
   const now = Date.now();
   const needsSync =
     force || bindings.some((b) => !b.lastSyncedAt || now - b.lastSyncedAt > 15000);
   if (!needsSync || activeSyncLocks.has(bKey)) {
-    return { updatedCount: 0, bindings };
+    return { updatedCount: 0, bindings, unmatchedFiles: [] };
   }
 
   activeSyncLocks.add(bKey);
   let updatedCount = 0;
+  const unmatchedFiles = [];
   try {
     const board = getOrCreateBoard(classId, subjectId, topicId);
+    const manualMaps = db.gdriveManualMaps[bKey] || {};
     const usedIds = new Set();
 
     for (const binding of bindings) {
@@ -424,8 +449,11 @@ async function syncGdriveFoldersForBoard(classId, subjectId, topicId, force = fa
         binding.lastError = '';
 
         for (const f of files) {
-          const matched = matchFileToStudent(f.fileName, board, usedIds);
-          if (!matched) continue;
+          const matched = matchFileToStudent(f.fileName, board, usedIds, f.fileId, manualMaps);
+          if (!matched) {
+            unmatchedFiles.push({ ...f, folderId: binding.folderId, folderLabel: binding.label });
+            continue;
+          }
           usedIds.add(matched.id);
 
           const cleanTitle = f.fileName.replace(/\.[^/.]+$/, '');
@@ -466,7 +494,7 @@ async function syncGdriveFoldersForBoard(classId, subjectId, topicId, force = fa
   } finally {
     activeSyncLocks.delete(bKey);
   }
-  return { updatedCount, bindings };
+  return { updatedCount, bindings, unmatchedFiles };
 }
 
 function getOrCreateTopics(classId, subjectId) {
@@ -1450,6 +1478,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         bindings: syncResult.bindings,
         updatedCount: syncResult.updatedCount,
+        unmatchedFiles: syncResult.unmatchedFiles || [],
         fileCount: files.length,
         presentations: getOrCreateBoard(classId, subjectId, topicId)
       });
@@ -1487,6 +1516,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         updatedCount: result.updatedCount,
         bindings: result.bindings,
+        unmatchedFiles: result.unmatchedFiles || [],
         presentations: getOrCreateBoard(classId, subjectId, topicId)
       });
     } catch (err) {
@@ -1656,10 +1686,34 @@ const server = http.createServer(async (req, res) => {
       const board = getOrCreateBoard(classId, subjectId, topicId);
 
       let importedCount = 0;
+      if (!db.gdriveManualMaps) db.gdriveManualMaps = {};
+      const bKey = getBoardKey(classId, subjectId, topicId);
+      if (!db.gdriveManualMaps[bKey]) db.gdriveManualMaps[bKey] = {};
+
       for (const m of mappings) {
         if (!m.studentId || !m.url) continue;
-        const item = board.find((p) => p.id === m.studentId);
+        let item = null;
+        if (m.studentId === '__NEW__') {
+          const maxOrder = board.reduce((max, p) => Math.max(max, p.order || 0), 0);
+          item = normalizeItem(
+            {
+              id: makeId(),
+              groupOrSeat: '',
+              presenterName: (m.fileName || '').replace(/\.[^/.]+$/, '') || '雲端簡報',
+              order: maxOrder + 1,
+              status: 'pending'
+            },
+            maxOrder
+          );
+          board.push(item);
+        } else {
+          item = board.find((p) => p.id === m.studentId);
+        }
         if (!item) continue;
+
+        if (m.fileId) {
+          db.gdriveManualMaps[bKey][m.fileId] = item.id;
+        }
 
         deleteStoredFileIfExist(item.storedFileName);
         item.fileUrl = '';
