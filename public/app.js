@@ -457,8 +457,36 @@
   }
 
   // ==================== 4-Stage Navigation (Class -> Subject -> Topic -> Board) ====================
+  function syncUrlState(stepName) {
+    try {
+      const nextParams = new URLSearchParams();
+      if (stepName === 'subject' && state.currentClassId) {
+        nextParams.set('step', 'subject');
+        nextParams.set('classId', state.currentClassId);
+      } else if (stepName === 'topic' && state.currentClassId && state.currentSubjectId) {
+        nextParams.set('step', 'topic');
+        nextParams.set('classId', state.currentClassId);
+        nextParams.set('subjectId', state.currentSubjectId);
+      } else if (
+        stepName === 'board' &&
+        state.currentClassId &&
+        state.currentSubjectId &&
+        state.currentTopicId
+      ) {
+        nextParams.set('step', 'board');
+        nextParams.set('classId', state.currentClassId);
+        nextParams.set('subjectId', state.currentSubjectId);
+        nextParams.set('topicId', state.currentTopicId);
+      }
+      const qStr = nextParams.toString();
+      const targetUrl = qStr ? `${window.location.pathname}?${qStr}` : window.location.pathname;
+      window.history.replaceState(null, '', targetUrl);
+    } catch (e) {}
+  }
+
   function goToStep(stepName) {
     state.currentStep = stepName;
+    syncUrlState(stepName);
     els.stepClassScreen.classList.toggle('hidden', stepName !== 'class');
     els.stepSubjectScreen.classList.toggle('hidden', stepName !== 'subject');
     els.stepTopicScreen.classList.toggle('hidden', stepName !== 'topic');
@@ -742,10 +770,18 @@
         }
       }
 
+      const qStep = params.get('step') || '';
       if (qClass && qSubject && qTopic && state.currentStep === 'class') {
         state.currentClassId = qClass;
         state.currentSubjectId = qSubject;
         await selectTopicAndGoToBoard(qTopic);
+      } else if (qStep === 'topic' && qClass && qSubject && state.currentStep === 'class') {
+        state.currentClassId = qClass;
+        state.currentSubjectId = qSubject;
+        goToStep('topic');
+      } else if (qStep === 'subject' && qClass && state.currentStep === 'class') {
+        state.currentClassId = qClass;
+        goToStep('subject');
       } else {
         goToStep(state.currentStep);
       }
