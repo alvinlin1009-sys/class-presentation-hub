@@ -1767,17 +1767,6 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname.startsWith('/uploads/')) {
     const fileName = path.basename(pathname.replace('/uploads/', ''));
     const filePath = path.join(UPLOADS_DIR, fileName);
-    if (!fs.existsSync(filePath) && USE_SUPABASE) {
-      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${encodeURIComponent(
-        fileName
-      )}`;
-      res.writeHead(302, {
-        Location: publicUrl,
-        'Cache-Control': 'no-cache'
-      });
-      res.end();
-      return;
-    }
     const forceDownload = parsedUrl.searchParams.get('download') === '1';
     let downloadName = fileName;
     for (const key of Object.keys(db.boards)) {
@@ -1786,6 +1775,18 @@ const server = http.createServer(async (req, res) => {
         downloadName = found.originalFileName;
         break;
       }
+    }
+    if (!fs.existsSync(filePath) && USE_SUPABASE) {
+      const dlParam = forceDownload ? `?download=${encodeURIComponent(downloadName)}` : '';
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${encodeURIComponent(
+        fileName
+      )}${dlParam}`;
+      res.writeHead(302, {
+        Location: publicUrl,
+        'Cache-Control': 'no-cache'
+      });
+      res.end();
+      return;
     }
     serveFile(req, res, filePath, forceDownload, downloadName);
     return;

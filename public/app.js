@@ -1080,7 +1080,29 @@
           : '';
 
         let subActionsHtml = '';
-        if (item.type !== 'pptx') {
+        if (item.type === 'pptx') {
+          let dlHref = '';
+          if (item.fileUrl) {
+            dlHref = `${item.fileUrl}?download=1`;
+          } else if (item.url) {
+            const driveMatch = item.url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+            dlHref = driveMatch
+              ? `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`
+              : item.url;
+          }
+          subActionsHtml = `
+            <div class="card-sub-actions">
+              <div class="sub-btn-group">
+                <button class="sub-btn" data-action="launch-primary" data-id="${item.id}" title="直接全螢幕放映">🟧 直接放映</button>
+                ${
+                  dlHref
+                    ? `<a class="sub-btn" href="${escapeHtml(dlHref)}" target="_blank" rel="noopener" title="下載簡報檔案">⬇️ 下載</a>`
+                    : ''
+                }
+              </div>
+            </div>
+          `;
+        } else {
           subActionsHtml = `
             <div class="card-sub-actions">
               <div class="sub-btn-group">
