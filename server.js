@@ -12,9 +12,19 @@ const IS_CLOUD_RUN = Boolean(
     process.env.RAILWAY_ENVIRONMENT ||
     process.env.FLY_APP_NAME
 );
-const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-const SUPABASE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
+function normalizeSupabaseOrigin(rawUrl) {
+  const s = String(rawUrl || '').trim();
+  if (!s) return '';
+  try {
+    return new URL(s).origin;
+  } catch (e) {
+    return s.replace(/\/rest\/v1\/?.*$/i, '').replace(/\/$/, '');
+  }
+}
+const SUPABASE_URL = normalizeSupabaseOrigin(process.env.SUPABASE_URL);
+const SUPABASE_KEY = String(
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || ''
+).trim();
 const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'presentations';
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_KEY);
 const PUBLIC_DIR = path.join(__dirname, 'public');
