@@ -364,12 +364,7 @@
           icon: '🟧',
           label: 'PowerPoint 檔',
           btnClass: 'launch-pptx',
-          btnText:
-            item.openMode === 'powerpoint_normal'
-              ? '🟧 以 PowerPoint 開啟檔案'
-              : item.openMode === 'newtab'
-              ? '🟧 下載 / 開啟 PPTX 檔案'
-              : '🟧 呼叫 PowerPoint 全螢幕放映'
+          btnText: '🟧 直接放映'
         };
       case 'file':
         return {
@@ -1075,16 +1070,15 @@
           ? `<div class="pres-note">💡 備註：${escapeHtml(item.note)}</div>`
           : '';
 
-        let extraLaunchBtns = '';
-        if (item.type === 'pptx' && item.fileUrl) {
-          extraLaunchBtns = `
-            <button class="sub-btn" data-action="open-ppt-normal" data-id="${item.id}" title="以 PowerPoint 編輯視窗開啟">🖥️ 一般視窗</button>
-            <a class="sub-btn" href="${escapeHtml(item.fileUrl)}?download=1" title="下載簡報檔">⬇️ 下載</a>
-          `;
-        } else {
-          extraLaunchBtns = `
-            <button class="sub-btn" data-action="open-embed" data-id="${item.id}" title="在網頁內全螢幕預覽">⛶ 內嵌播放</button>
-            <button class="sub-btn" data-action="open-newtab" data-id="${item.id}" title="在新分頁開啟原始簡報">↗️ 新分頁</button>
+        let subActionsHtml = '';
+        if (item.type !== 'pptx') {
+          subActionsHtml = `
+            <div class="card-sub-actions">
+              <div class="sub-btn-group">
+                <button class="sub-btn" data-action="open-embed" data-id="${item.id}" title="在網頁內全螢幕開啟">⛶ 全螢幕開啟</button>
+                <button class="sub-btn" data-action="open-newtab" data-id="${item.id}" title="在新分頁開啟簡報">↗️ 新分頁開啟</button>
+              </div>
+            </div>
           `;
         }
 
@@ -1117,16 +1111,7 @@
               <button class="btn-launch ${typeMeta.btnClass}" data-action="launch-primary" data-id="${item.id}">
                 <span>${typeMeta.btnText}</span>
               </button>
-
-              <div class="card-sub-actions">
-                <div class="sub-btn-group">
-                  ${extraLaunchBtns}
-                </div>
-                <div class="sub-btn-group">
-                  <button class="sub-btn" data-action="upload-for-student" data-id="${item.id}" title="重新上傳或修改簡報">🔄 重傳/修改</button>
-                  <button class="sub-btn danger" data-action="clear-submission" data-id="${item.id}" title="清除已上傳的簡報（保留姓名）">✕ 清空簡報</button>
-                </div>
-              </div>
+              ${subActionsHtml}
             </div>
           </article>
         `;
@@ -1165,11 +1150,19 @@
     const mode = forceMode || item.openMode || 'auto';
 
     if (item.type === 'pptx' && item.storedFileName && mode !== 'newtab') {
+      if (state.serverInfo && state.serverInfo.isCloudHosted) {
+        markAsPresenting(item.id);
+        const absolutePptxUrl = `${window.location.origin}${item.fileUrl}`;
+        const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
+          absolutePptxUrl
+        )}`;
+        openFullscreenViewer(item, officeEmbedUrl, absolutePptxUrl);
+        return;
+      }
+
       const slideShowMode = mode !== 'powerpoint_normal';
       showToast(
-        `🟧 正在講台電腦開啟「${item.presenterName}」的 PowerPoint (${
-          slideShowMode ? '全螢幕投影片放映' : '一般模式'
-        })...`
+        `🟧 正在講台電腦開啟「${item.presenterName}」的 PowerPoint (直接放映)...`
       );
       try {
         const res = await fetch(`/api/open-local/${item.id}?${getCurrentBoardQuery()}`, {
