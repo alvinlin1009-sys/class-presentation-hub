@@ -155,6 +155,7 @@ function loadDB() {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed.classes) && Array.isArray(parsed.subjects) && parsed.boards) {
         if (!parsed.topics) parsed.topics = {};
+        if (!parsed.gdriveBindings) parsed.gdriveBindings = {};
         return parsed;
       }
     }
@@ -172,7 +173,8 @@ function loadDB() {
     ],
     subjects: [...DEFAULT_SUBJECTS],
     topics: {}, // key: `${classId}__${subjectId}` -> [{ id, name, createdAt }]
-    boards: {}  // key: `${classId}__${subjectId}__${topicId}` -> array of presentation items
+    boards: {}, // key: `${classId}__${subjectId}__${topicId}` -> array of presentation items
+    gdriveBindings: {} // key: `${classId}__${subjectId}__${topicId}` -> [{ folderId, folderUrl, label, lastSyncedAt, fileCount }]
   };
   saveDB(initial);
   return initial;
@@ -240,6 +242,7 @@ async function initSupabase() {
       const parsed = rows[0].data;
       if (Array.isArray(parsed.classes) && Array.isArray(parsed.subjects) && parsed.boards) {
         if (!parsed.topics) parsed.topics = {};
+        if (!parsed.gdriveBindings) parsed.gdriveBindings = {};
         db = parsed;
         fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
         console.log('  ☁️ 已從 Supabase 雲端資料庫載入班級報告資料');
@@ -286,6 +289,184 @@ function getTopicKey(classId, subjectId) {
 
 function getBoardKey(classId, subjectId, topicId) {
   return `${classId}__${subjectId}__${topicId}`;
+}
+
+function extractGdriveFolderId(rawUrl) {
+  const s = String(rawUrl || '').trim();
+  const m =
+    s.match(/\/folders\/([a-zA-Z0-9_-]+)/) ||
+    s.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
+    s.match(/^([a-zA-Z0-9_-]{15,})$/);
+  return m ? m[1] : '';
+}
+
+async function fetchGdriveFolderFiles(folderId) {
+  const embedRes = await fetch(
+    `https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(folderId)}#list`,
+    {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+      }
+    }
+  );
+
+  if (!embedRes.ok || embedRes.url.includes('accounts.google.com')) {
+    throw new Error(
+      '無法讀取該資料夾！請確認資料夾共用權限已設為「知道連結的任何人皆可檢視」。'
+    );
+  }
+
+  const html = await embedRes.text();
+  if (html.includes('accounts.google.com/ServiceLogin') || html.includes('Sign in')) {
+    throw new Error(
+      '此資料夾目前需要登入才能存取，請在 Google 雲端硬碟將資料夾設為「知道連結的任何人皆可檢視」。'
+    );
+  }
+
+  const decodeHtml = (s) =>
+    String(s || '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+
+  const files = [];
+  const entryRegex =
+    /<div[^>]*class="flip-entry"[^>]*id="entry-([^"]+)"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>[\s\S]*?<div[^>]*class="flip-entry-title"[^>]*>([\s\S]*?)<\/div>/g;
+  let match;
+  while ((match = entryRegex.exec(html)) !== null) {
+    const fileId = match[1].trim();
+    const rawHref = decodeHtml(match[2].trim());
+    const fileName = decodeHtml(match[3].replace(/<[^>]+>/g, '').trim());
+    if (!fileId || !fileName) continue;
+
+    const lowerName = fileName.toLowerCase();
+    let type = 'link';
+    let url = rawHref;
+    if (rawHref.includes('docs.google.com/presentation/')) {
+      type = 'gslides';
+      url = `https://docs.google.com/presentation/d/${fileId}/present`;
+    } else if (lowerName.endsWith('.pdf')) {
+      type = 'pdf';
+      url = `https://drive.google.com/file/d/${fileId}/preview`;
+    } else if (
+      lowerName.endsWith('.pptx') ||
+      lowerName.endsWith('.ppt') ||
+      lowerName.endsWith('.ppsx')
+    ) {
+      type = 'pptx';
+      url = `https://drive.google.com/file/d/${fileId}/preview`;
+    } else if (rawHref.includes('drive.google.com/file/d/')) {
+      type = 'link';
+      url = `https://drive.google.com/file/d/${fileId}/preview`;
+    }
+
+    files.push({ fileId, fileName, type, url });
+  }
+  return files;
+}
+
+function matchFileToStudent(fileName, board, usedStudentIds = new Set()) {
+  const sortedByNameLen = [...board].sort(
+    (a, b) => (b.presenterName || '').length - (a.presenterName || '').length
+  );
+  for (const s of sortedByNameLen) {
+    if (s.presenterName && s.presenterName !== '未具名' && fileName.includes(s.presenterName)) {
+      return s;
+    }
+  }
+  const numMatches = fileName.match(/(?:^|[^\d])(\d{1,2})(?=[^\d]|$)/g) || [];
+  for (const token of numMatches) {
+    const num = parseInt(token.replace(/[^\d]/g, ''), 10);
+    if (!Number.isNaN(num)) {
+      const foundBySeat = board.find(
+        (s) =>
+          s.groupOrSeat &&
+          parseInt(String(s.groupOrSeat).replace(/[^\d]/g, ''), 10) === num &&
+          !usedStudentIds.has(s.id)
+      );
+      if (foundBySeat) return foundBySeat;
+    }
+  }
+  return null;
+}
+
+const activeSyncLocks = new Set();
+async function syncGdriveFoldersForBoard(classId, subjectId, topicId, force = false) {
+  if (!classId || !subjectId || !topicId) return { updatedCount: 0, bindings: [] };
+  if (!db.gdriveBindings) db.gdriveBindings = {};
+  const bKey = getBoardKey(classId, subjectId, topicId);
+  const bindings = db.gdriveBindings[bKey];
+  if (!Array.isArray(bindings) || bindings.length === 0) {
+    return { updatedCount: 0, bindings: [] };
+  }
+
+  const now = Date.now();
+  const needsSync =
+    force || bindings.some((b) => !b.lastSyncedAt || now - b.lastSyncedAt > 15000);
+  if (!needsSync || activeSyncLocks.has(bKey)) {
+    return { updatedCount: 0, bindings };
+  }
+
+  activeSyncLocks.add(bKey);
+  let updatedCount = 0;
+  try {
+    const board = getOrCreateBoard(classId, subjectId, topicId);
+    const usedIds = new Set();
+
+    for (const binding of bindings) {
+      try {
+        const files = await fetchGdriveFolderFiles(binding.folderId);
+        binding.fileCount = files.length;
+        binding.lastSyncedAt = Date.now();
+        binding.lastError = '';
+
+        for (const f of files) {
+          const matched = matchFileToStudent(f.fileName, board, usedIds);
+          if (!matched) continue;
+          usedIds.add(matched.id);
+
+          const cleanTitle = f.fileName.replace(/\.[^/.]+$/, '');
+          const isChanged =
+            !matched.hasSubmitted ||
+            matched.url !== f.url ||
+            matched.title !== cleanTitle ||
+            matched.type !== f.type;
+
+          // Update if student hasn't submitted yet, or if this slot is synced from Drive
+          if (isChanged && (!matched.hasSubmitted || !matched.storedFileName)) {
+            matched.fileUrl = '';
+            matched.storedFileName = '';
+            matched.originalFileName = '';
+            matched.fileSize = 0;
+            matched.url = f.url;
+            matched.type = f.type;
+            matched.title = cleanTitle;
+            matched.openMode = 'embed';
+            matched.sourceFolderId = binding.folderId;
+            matched.hasSubmitted = true;
+            if (matched.status === 'unsubmitted') {
+              matched.status = 'pending';
+            }
+            matched.updatedAt = Date.now();
+            updatedCount++;
+          }
+        }
+      } catch (err) {
+        binding.lastError = err.message;
+      }
+    }
+
+    saveDB(db);
+    if (updatedCount > 0) {
+      broadcastUpdate('roster_updated', classId, subjectId, topicId);
+    }
+  } finally {
+    activeSyncLocks.delete(bKey);
+  }
+  return { updatedCount, bindings };
 }
 
 function getOrCreateTopics(classId, subjectId) {
@@ -833,8 +1014,13 @@ const server = http.createServer(async (req, res) => {
     const sId = querySubjectId || (db.subjects[0] && db.subjects[0].id) || '國文';
     const topics = getOrCreateTopics(cId, sId);
     const tId = queryTopicId || (topics[0] && topics[0].id) || '';
+    if (tId) {
+      await syncGdriveFoldersForBoard(cId, sId, tId, false);
+    }
     const presentations = tId ? getOrCreateBoard(cId, sId, tId) : [];
     const shortCode = tId ? getOrCreateShortCode(cId, sId, tId) : '';
+    const bKey = tId ? getBoardKey(cId, sId, tId) : '';
+    const gdriveBindings = (bKey && db.gdriveBindings && db.gdriveBindings[bKey]) || [];
     if (tId) {
       activeSession = { classId: cId, subjectId: sId, topicId: tId, shortCode };
     }
@@ -844,6 +1030,7 @@ const server = http.createServer(async (req, res) => {
       topicId: tId,
       shortCode,
       presentations,
+      gdriveBindings,
       hierarchySummary: getHierarchySummary()
     });
     return;
@@ -1210,7 +1397,105 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 7b. Preview & Import Public Google Drive Folder
+  // 7b. Manage Multiple Bound Google Drive Folders + Auto Sync
+  if (pathname === '/api/gdrive-bindings' && req.method === 'GET') {
+    const bKey = getBoardKey(queryClassId, querySubjectId, queryTopicId);
+    const bindings = (db.gdriveBindings && db.gdriveBindings[bKey]) || [];
+    sendJson(res, 200, { ok: true, bindings });
+    return;
+  }
+
+  if (pathname === '/api/gdrive-bindings' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const classId = body.classId || queryClassId || (db.classes[0] && db.classes[0].id);
+      const subjectId = body.subjectId || querySubjectId || (db.subjects[0] && db.subjects[0].id);
+      const topicId = body.topicId || queryTopicId || '';
+      const rawUrl = String(body.folderUrl || '').trim();
+      const label = String(body.label || '').trim();
+
+      const folderId = extractGdriveFolderId(rawUrl);
+      if (!folderId) {
+        sendJson(res, 400, {
+          error: '請貼上正確的 Google 雲端硬碟資料夾網址（例如 https://drive.google.com/drive/folders/...）'
+        });
+        return;
+      }
+
+      // Verify folder is accessible
+      const files = await fetchGdriveFolderFiles(folderId);
+      if (!db.gdriveBindings) db.gdriveBindings = {};
+      const bKey = getBoardKey(classId, subjectId, topicId);
+      if (!Array.isArray(db.gdriveBindings[bKey])) {
+        db.gdriveBindings[bKey] = [];
+      }
+
+      const existing = db.gdriveBindings[bKey].find((b) => b.folderId === folderId);
+      if (existing) {
+        existing.folderUrl = rawUrl;
+        if (label) existing.label = label;
+      } else {
+        db.gdriveBindings[bKey].push({
+          folderId,
+          folderUrl: rawUrl,
+          label: label || `雲端資料夾 #${db.gdriveBindings[bKey].length + 1}`,
+          fileCount: files.length,
+          lastSyncedAt: 0,
+          lastError: ''
+        });
+      }
+
+      const syncResult = await syncGdriveFoldersForBoard(classId, subjectId, topicId, true);
+      sendJson(res, 200, {
+        ok: true,
+        bindings: syncResult.bindings,
+        updatedCount: syncResult.updatedCount,
+        fileCount: files.length,
+        presentations: getOrCreateBoard(classId, subjectId, topicId)
+      });
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+    return;
+  }
+
+  if (pathname === '/api/gdrive-bindings' && req.method === 'DELETE') {
+    const classId = queryClassId;
+    const subjectId = querySubjectId;
+    const topicId = queryTopicId;
+    const folderId = parsedUrl.searchParams.get('folderId') || '';
+    const bKey = getBoardKey(classId, subjectId, topicId);
+    if (db.gdriveBindings && Array.isArray(db.gdriveBindings[bKey])) {
+      db.gdriveBindings[bKey] = db.gdriveBindings[bKey].filter((b) => b.folderId !== folderId);
+      saveDB(db);
+    }
+    sendJson(res, 200, {
+      ok: true,
+      bindings: (db.gdriveBindings && db.gdriveBindings[bKey]) || []
+    });
+    return;
+  }
+
+  if (pathname === '/api/gdrive-sync' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const classId = body.classId || queryClassId || (db.classes[0] && db.classes[0].id);
+      const subjectId = body.subjectId || querySubjectId || (db.subjects[0] && db.subjects[0].id);
+      const topicId = body.topicId || queryTopicId || '';
+      const result = await syncGdriveFoldersForBoard(classId, subjectId, topicId, true);
+      sendJson(res, 200, {
+        ok: true,
+        updatedCount: result.updatedCount,
+        bindings: result.bindings,
+        presentations: getOrCreateBoard(classId, subjectId, topicId)
+      });
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+    return;
+  }
+
+  // 7c. Preview & Import Public Google Drive Folder
   if (req.method === 'POST' && pathname === '/api/gdrive-preview') {
     try {
       const body = await parseJsonBody(req);
@@ -1833,4 +2118,15 @@ server.listen(PORT, '0.0.0.0', async () => {
     // Automatically start the cross-network public upload tunnel on local host
     startPublicTunnel();
   }
+  // Background auto-sync for bound Google Drive folders every 30s
+  setInterval(() => {
+    if (activeSession.classId && activeSession.subjectId && activeSession.topicId) {
+      syncGdriveFoldersForBoard(
+        activeSession.classId,
+        activeSession.subjectId,
+        activeSession.topicId,
+        false
+      ).catch(() => {});
+    }
+  }, 30000);
 });

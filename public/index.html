@@ -199,7 +199,8 @@
           </select>
         </div>
 
-        <button id="openGdriveImportBtn" class="btn btn-outline">📂 匯入雲端資料夾</button>
+        <button id="openGdriveImportBtn" class="btn btn-outline">📂 綁定雲端資料夾</button>
+        <button id="quickGdriveSyncBtn" class="btn btn-outline hidden" title="立即從已綁定的 Google 雲端資料夾同步最新簡報">🔄 同步雲端</button>
 
         <div class="dropdown-wrap">
           <button id="manageMenuBtn" class="btn btn-outline">⚙️ 批次管理 ▾</button>
@@ -525,35 +526,39 @@
     </div>
   </div>
 
-  <!-- ==================== MODAL 5: Google Drive Folder Batch Import ==================== -->
+  <!-- ==================== MODAL 5: Google Drive Multi-Folder Binding & Sync ==================== -->
   <div id="gdriveImportModal" class="modal-backdrop hidden">
     <div class="modal-card modal-lg">
       <div class="modal-header">
-        <h2>📂 從 Google 雲端資料夾整批匯入簡報</h2>
+        <h2>📂 綁定 Google 雲端資料夾（支援多個・自動同步更新）</h2>
         <button class="modal-close" data-close="gdriveImportModal">✕</button>
       </div>
       <div class="modal-body">
         <p class="hint" style="margin-bottom: 12px;">
-          請貼上 Google 雲端硬碟資料夾網址（需先將資料夾設為「<strong>知道連結的任何人皆可檢視</strong>」），系統會自動依檔名裡的「座號」或「姓名」配對全班同學！
+          可綁定<strong>多個</strong> Google 雲端硬碟資料夾（需先設為「<strong>知道連結的任何人皆可檢視</strong>」）。綁定後只要資料夾內有新增或更新簡報，彙整中心每 30 秒及開啟頁面時都會<strong>自動同步更新</strong>！
         </p>
-        <div class="gdrive-url-row">
+
+        <div class="gdrive-url-row" style="margin-bottom: 10px;">
+          <input
+            type="text"
+            id="gdriveFolderLabelInput"
+            style="max-width: 170px;"
+            placeholder="備註名稱（選填，例：補交區）"
+          />
           <input
             type="url"
             id="gdriveFolderUrlInput"
             placeholder="https://drive.google.com/drive/folders/..."
           />
-          <button type="button" id="gdriveFetchBtn" class="btn btn-primary">🔍 讀取資料夾</button>
+          <button type="button" id="gdriveBindBtn" class="btn btn-primary">🔗 綁定並同步</button>
         </div>
 
-        <div id="gdrivePreviewSection" class="gdrive-preview-section hidden">
-          <div id="gdriveMatchSummary" class="gdrive-match-summary"></div>
-          <div id="gdrivePreviewList" class="gdrive-preview-list"></div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-outline" data-close="gdriveImportModal">取消</button>
-            <button type="button" id="gdriveConfirmImportBtn" class="btn btn-primary btn-lg">
-              ✅ 確認一鍵匯入已配對簡報
-            </button>
+        <div class="gdrive-bindings-section">
+          <div class="gdrive-bindings-header">
+            <strong>📋 目前已綁定的雲端資料夾（<span id="gdriveBindingCount">0</span> 個）</strong>
+            <button type="button" id="gdriveSyncAllBtn" class="btn btn-xs btn-outline">🔄 立即全部同步</button>
           </div>
+          <div id="gdriveBindingsList" class="gdrive-bindings-list"></div>
         </div>
       </div>
     </div>
