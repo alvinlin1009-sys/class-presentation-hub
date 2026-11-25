@@ -386,7 +386,7 @@
           icon: '🟧',
           label: 'PowerPoint 檔',
           btnClass: 'launch-pptx',
-          btnText: '🟧 直接放映'
+          btnText: '📊 用 Google 簡報開啟'
         };
       case 'file':
         return {
@@ -1106,7 +1106,7 @@
           subActionsHtml = `
             <div class="card-sub-actions">
               <div class="sub-btn-group">
-                <button class="sub-btn" data-action="launch-primary" data-id="${item.id}" title="直接全螢幕放映">🟧 直接放映</button>
+                <button class="sub-btn" data-action="launch-primary" data-id="${item.id}" title="使用 Google 簡報開啟">📊 用 Google 簡報開啟</button>
                 ${
                   dlHref
                     ? `<a class="sub-btn" href="${escapeHtml(dlHref)}" target="_blank" rel="noopener" title="下載簡報檔案">⬇️ 下載</a>`
@@ -1193,34 +1193,46 @@
     }
     const mode = forceMode || item.openMode || 'auto';
 
-    if (item.type === 'pptx' && item.storedFileName && mode !== 'newtab') {
-      if (state.serverInfo && state.serverInfo.isCloudHosted) {
-        markAsPresenting(item.id);
-        const directPptxUrl = getFastFileUrl(item);
-        const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
-          directPptxUrl
-        )}`;
-        openFullscreenViewer(item, officeEmbedUrl, directPptxUrl);
-        return;
+    if (item.type === 'pptx' && mode !== 'newtab') {
+      if (item.url) {
+        const driveMatch = item.url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+        if (driveMatch) {
+          markAsPresenting(item.id);
+          const gslidesEditUrl = `https://docs.google.com/presentation/d/${driveMatch[1]}/edit`;
+          window.open(gslidesEditUrl, '_blank', 'noopener');
+          showToast(`📊 已用 Google 簡報開啟「${item.presenterName}」的簡報`);
+          return;
+        }
       }
+      if (item.storedFileName) {
+        if (state.serverInfo && state.serverInfo.isCloudHosted) {
+          markAsPresenting(item.id);
+          const directPptxUrl = getFastFileUrl(item);
+          const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
+            directPptxUrl
+          )}`;
+          openFullscreenViewer(item, officeEmbedUrl, directPptxUrl);
+          return;
+        }
 
-      const slideShowMode = mode !== 'powerpoint_normal';
-      showToast(
-        `🟧 正在講台電腦開啟「${item.presenterName}」的 PowerPoint (直接放映)...`
-      );
-      try {
-        const res = await fetch(`/api/open-local/${item.id}?${getCurrentBoardQuery()}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slideShowMode })
-        });
-        if (!res.ok) {
+        const slideShowMode = mode !== 'powerpoint_normal';
+        showToast(
+          `🟧 正在講台電腦開啟「${item.presenterName}」的 PowerPoint (直接放映)...`
+        );
+        try {
+          const res = await fetch(`/api/open-local/${item.id}?${getCurrentBoardQuery()}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slideShowMode })
+          });
+          if (!res.ok) {
+            window.open(item.fileUrl, '_blank');
+          }
+        } catch (err) {
           window.open(item.fileUrl, '_blank');
         }
-      } catch (err) {
-        window.open(item.fileUrl, '_blank');
+        return;
       }
-      return;
     }
 
     markAsPresenting(item.id);
