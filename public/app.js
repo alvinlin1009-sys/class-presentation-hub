@@ -283,17 +283,30 @@
     return 'file';
   }
 
+  function getFastFileUrl(item) {
+    if (
+      state.serverInfo &&
+      state.serverInfo.supabasePublicBase &&
+      item &&
+      item.storedFileName
+    ) {
+      return `${state.serverInfo.supabasePublicBase}/${encodeURIComponent(item.storedFileName)}`;
+    }
+    return item && item.fileUrl ? `${window.location.origin}${item.fileUrl}` : '';
+  }
+
   function resolvePresentationUrls(item) {
     if (item.fileUrl) {
+      const fastUrl = getFastFileUrl(item);
       if (item.type === 'pdf') {
         return {
-          embedUrl: `${item.fileUrl}#toolbar=1&navpanes=0&view=Fit`,
-          newTabUrl: item.fileUrl
+          embedUrl: `${fastUrl}#toolbar=1&navpanes=0&view=Fit`,
+          newTabUrl: fastUrl
         };
       }
       return {
-        embedUrl: item.fileUrl,
-        newTabUrl: item.fileUrl
+        embedUrl: fastUrl,
+        newTabUrl: fastUrl
       };
     }
 
@@ -1183,11 +1196,11 @@
     if (item.type === 'pptx' && item.storedFileName && mode !== 'newtab') {
       if (state.serverInfo && state.serverInfo.isCloudHosted) {
         markAsPresenting(item.id);
-        const absolutePptxUrl = `${window.location.origin}${item.fileUrl}`;
+        const directPptxUrl = getFastFileUrl(item);
         const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
-          absolutePptxUrl
+          directPptxUrl
         )}`;
-        openFullscreenViewer(item, officeEmbedUrl, absolutePptxUrl);
+        openFullscreenViewer(item, officeEmbedUrl, directPptxUrl);
         return;
       }
 
@@ -1222,12 +1235,47 @@
     openFullscreenViewer(item, embedUrl, newTabUrl);
   }
 
+  const preconnectedOrigins = new Set();
+  function preconnectOrigin(urlStr) {
+    try {
+      const origin = new URL(urlStr).origin;
+      if (preconnectedOrigins.has(origin)) return;
+      preconnectedOrigins.add(origin);
+      const link = document.createElement('link');
+      link.rel = 'preconnect';
+      link.href = origin;
+      document.head.appendChild(link);
+    } catch (e) {}
+  }
+
+  function warmPresentationAssets(item) {
+    if (!item || !item.hasSubmitted) return;
+    if (item.type === 'pptx' && item.storedFileName && state.serverInfo.isCloudHosted) {
+      preconnectOrigin('https://view.officeapps.live.com');
+      const directUrl = getFastFileUrl(item);
+      if (directUrl) preconnectOrigin(directUrl);
+    } else if (item.fileUrl) {
+      const fastUrl = getFastFileUrl(item);
+      if (fastUrl) preconnectOrigin(fastUrl);
+    } else if (item.url) {
+      preconnectOrigin(item.url);
+    }
+  }
+
   function openFullscreenViewer(item, embedUrl, newTabUrl) {
     state.activeViewerItem = { item, embedUrl, newTabUrl };
     els.viewerBadge.textContent = item.groupOrSeat || `#${item.order || ''}`;
     els.viewerPresenter.textContent = item.presenterName;
     const topic = getDisplayTopic(item);
     els.viewerTitle.textContent = topic ? `— ${topic}` : '';
+
+    const viewerLoading = document.getElementById('viewerLoading');
+    if (viewerLoading) {
+      viewerLoading.classList.remove('hidden');
+      els.viewerIframe.onload = () => viewerLoading.classList.add('hidden');
+      setTimeout(() => viewerLoading.classList.add('hidden'), 15000);
+    }
+
     els.viewerIframe.src = embedUrl;
     els.viewerOverlay.classList.remove('hidden');
 
@@ -2400,6 +2448,14 @@
       } finally {
         els.submitPresentationBtn.disabled = false;
       }
+    });
+
+    // Hover Preconnect / Pre-warm for faster presentation launch
+    els.presentationsContainer.addEventListener('pointerover', (e) => {
+      const btn = e.target.closest('.btn-launch, [data-action="open-embed"]');
+      if (!btn) return;
+      const item = state.presentations.find((p) => p.id === btn.dataset.id);
+      if (item) warmPresentationAssets(item);
     });
 
     // Card Actions Delegation

@@ -815,6 +815,9 @@ const server = http.createServer(async (req, res) => {
       lanAddresses: getLanAddresses(),
       isLocalHost,
       isCloudHosted: IS_CLOUD_RUN,
+      supabasePublicBase: USE_SUPABASE
+        ? `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}`
+        : '',
       classes: db.classes.map((c) => ({ id: c.id, name: c.name, count: (c.roster || []).length })),
       subjects: db.subjects,
       hierarchySummary: getHierarchySummary(),
@@ -1783,7 +1786,7 @@ const server = http.createServer(async (req, res) => {
       )}${dlParam}`;
       res.writeHead(302, {
         Location: publicUrl,
-        'Cache-Control': 'no-cache'
+        'Cache-Control': forceDownload ? 'no-cache' : 'public, max-age=3600'
       });
       res.end();
       return;
