@@ -808,6 +808,8 @@ body {
   justify-content: space-between;
   transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
   position: relative;
+  content-visibility: auto;
+  contain-intrinsic-size: 270px;
 }
 
 .pres-card:hover {

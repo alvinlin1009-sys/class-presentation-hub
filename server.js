@@ -1053,7 +1053,8 @@ const server = http.createServer(async (req, res) => {
     const topics = getOrCreateTopics(cId, sId);
     const tId = queryTopicId || (topics[0] && topics[0].id) || '';
     if (tId) {
-      await syncGdriveFoldersForBoard(cId, sId, tId, false);
+      // Non-blocking background sync so opening the board is instant
+      syncGdriveFoldersForBoard(cId, sId, tId, false).catch(() => {});
     }
     const presentations = tId ? getOrCreateBoard(cId, sId, tId) : [];
     const shortCode = tId ? getOrCreateShortCode(cId, sId, tId) : '';
