@@ -12,6 +12,11 @@ const IS_CLOUD_RUN = Boolean(
     process.env.RAILWAY_ENVIRONMENT ||
     process.env.FLY_APP_NAME
 );
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+const SUPABASE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
+const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'presentations';
+const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_KEY);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
@@ -163,17 +168,103 @@ function loadDB() {
   return initial;
 }
 
+let supabaseSaveChain = Promise.resolve();
+function saveDbToSupabase(dbData) {
+  if (!USE_SUPABASE) return;
+  const snapshot = JSON.stringify(dbData);
+  supabaseSaveChain = supabaseSaveChain
+    .then(async () => {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/hub_state?on_conflict=id`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify({
+          id: 'main',
+          data: JSON.parse(snapshot),
+          updated_at: new Date().toISOString()
+        })
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        console.error('Supabase save error:', res.status, txt);
+      }
+    })
+    .catch((err) => console.error('Supabase save failed:', err.message));
+}
+
+async function initSupabase() {
+  if (!USE_SUPABASE) return;
+  try {
+    // Ensure public storage bucket exists
+    await fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        id: SUPABASE_BUCKET,
+        name: SUPABASE_BUCKET,
+        public: true
+      })
+    }).catch(() => {});
+
+    // Load persisted DB state
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/hub_state?id=eq.main&select=data`, {
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`
+      }
+    });
+    if (!res.ok) {
+      console.error('Supabase load error:', res.status, await res.text().catch(() => ''));
+      return;
+    }
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows[0] && rows[0].data) {
+      const parsed = rows[0].data;
+      if (Array.isArray(parsed.classes) && Array.isArray(parsed.subjects) && parsed.boards) {
+        if (!parsed.topics) parsed.topics = {};
+        db = parsed;
+        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+        console.log('  ☁️ 已從 Supabase 雲端資料庫載入班級報告資料');
+      }
+    } else {
+      saveDbToSupabase(db);
+      console.log('  ☁️ 已初始化 Supabase 雲端資料庫');
+    }
+  } catch (err) {
+    console.error('Supabase init failed:', err.message);
+  }
+}
+
 function saveDB(dbData) {
   fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2), 'utf8');
+  saveDbToSupabase(dbData);
 }
 
 function deleteStoredFileIfExist(storedFileName) {
   if (!storedFileName) return;
-  const fp = path.join(UPLOADS_DIR, path.basename(storedFileName));
+  const baseName = path.basename(storedFileName);
+  const fp = path.join(UPLOADS_DIR, baseName);
   if (fs.existsSync(fp)) {
     try {
       fs.unlinkSync(fp);
     } catch (e) {}
+  }
+  if (USE_SUPABASE) {
+    fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(baseName)}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`
+      }
+    }).catch(() => {});
   }
 }
 
@@ -1126,7 +1217,36 @@ const server = http.createServer(async (req, res) => {
 
       req.pipe(writeStream);
 
-      writeStream.on('finish', () => {
+      writeStream.on('finish', async () => {
+        if (USE_SUPABASE) {
+          try {
+            const fileBuf = fs.readFileSync(destPath);
+            const contentType = MIME_TYPES[safeExt] || 'application/octet-stream';
+            const upRes = await fetch(
+              `${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(
+                storedFileName
+              )}`,
+              {
+                method: 'POST',
+                headers: {
+                  apikey: SUPABASE_KEY,
+                  Authorization: `Bearer ${SUPABASE_KEY}`,
+                  'Content-Type': contentType,
+                  'x-upsert': 'true'
+                },
+                body: fileBuf
+              }
+            );
+            if (!upRes.ok) {
+              const errTxt = await upRes.text().catch(() => '');
+              throw new Error(`Supabase Storage 上傳失敗 (${upRes.status}): ${errTxt}`);
+            }
+          } catch (cloudErr) {
+            console.error('Supabase file upload error:', cloudErr);
+            sendJson(res, 500, { error: '雲端檔案儲存失敗，請檢查 Supabase Storage 設定' });
+            return;
+          }
+        }
         sendJson(res, 200, {
           ok: true,
           fileUrl: `/uploads/${storedFileName}`,
@@ -1441,6 +1561,17 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname.startsWith('/uploads/')) {
     const fileName = path.basename(pathname.replace('/uploads/', ''));
     const filePath = path.join(UPLOADS_DIR, fileName);
+    if (!fs.existsSync(filePath) && USE_SUPABASE) {
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${encodeURIComponent(
+        fileName
+      )}`;
+      res.writeHead(302, {
+        Location: publicUrl,
+        'Cache-Control': 'no-cache'
+      });
+      res.end();
+      return;
+    }
     const forceDownload = parsedUrl.searchParams.get('download') === '1';
     let downloadName = fileName;
     for (const key of Object.keys(db.boards)) {
@@ -1472,7 +1603,7 @@ const server = http.createServer(async (req, res) => {
   serveFile(req, res, path.join(PUBLIC_DIR, 'index.html'));
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', async () => {
   const lanList = getLanAddresses();
   console.log('====================================================');
   console.log('  🎓 班級報告彙整系統已啟動！');
@@ -1485,6 +1616,9 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('  ⚠️ 未偵測到區域網路 IP，請確認網路連線或開啟跨網路通道');
   }
   console.log('====================================================');
+  if (USE_SUPABASE) {
+    await initSupabase();
+  }
   if (!IS_CLOUD_RUN) {
     // Automatically start the cross-network public upload tunnel on local host
     startPublicTunnel();
