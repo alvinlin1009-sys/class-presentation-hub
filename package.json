@@ -1,0 +1,9 @@
+{
+  "name": "classroom-presentation-hub",
+  "version": "1.0.0",
+  "description": "班級報告彙整中心 — 支援 Canva、Google 簡報、PDF 全螢幕預覽、PowerPoint 一鍵開啟與抽籤排序",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

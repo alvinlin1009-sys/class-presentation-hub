@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>手機上傳簡報 — 班級報告彙整</title>
+  <link rel="stylesheet" href="/mobile.css" />
+</head>
+<body>
+  <div class="mobile-shell">
+    <!-- Mobile Header -->
+    <header class="m-header">
+      <div class="m-header-top">
+        <span class="m-brand">📱 同學簡報上傳</span>
+        <span id="mLiveBadge" class="m-live-badge">● 即時連線</span>
+      </div>
+      <div class="m-context-bar" id="mContextBar">
+        <span id="mClassTag" class="m-pill">載入中...</span>
+        <span id="mSubjectTag" class="m-pill">...</span>
+        <span id="mTopicTag" class="m-pill m-pill-topic">...</span>
+      </div>
+    </header>
+
+    <!-- Tab Switcher: Upload vs Class Status -->
+    <nav class="m-nav-tabs">
+      <button type="button" class="m-nav-tab active" data-mtab="upload">📤 上傳我的簡報</button>
+      <button type="button" class="m-nav-tab" data-mtab="status">📋 全班繳交狀態 (<span id="mSubmittedCount">0/0</span>)</button>
+    </nav>
+
+    <!-- View 1: Mobile Upload Form -->
+    <main id="mUploadView" class="m-main">
+      <!-- Success Banner (shown right after submit) -->
+      <section id="mSuccessCard" class="m-card m-success-card hidden">
+        <div class="m-success-icon">🎉</div>
+        <h2 id="mSuccessTitle">簡報上傳成功！</h2>
+        <p id="mSuccessDesc" class="m-success-desc"></p>
+        <div class="m-success-actions">
+          <button type="button" id="mEditAgainBtn" class="m-btn m-btn-outline">🔄 修改 / 重傳簡報</button>
+          <button type="button" id="mGoStatusBtn" class="m-btn m-btn-primary">📋 查看全班狀態</button>
+        </div>
+      </section>
+
+      <!-- Main Form Card -->
+      <form id="mUploadForm" class="m-form">
+        <!-- 1. Student Selector -->
+        <section class="m-card">
+          <label class="m-label" for="mStudentSelect">1. 選擇你的座號與姓名 <span class="m-req">*</span></label>
+          <select id="mStudentSelect" class="m-select"></select>
+          <div id="mStudentStatusHint" class="m-hint"></div>
+
+          <div id="mManualStudentBox" class="m-manual-box hidden">
+            <div class="m-field">
+              <label class="m-sublabel" for="mManualSeat">座號 / 組別</label>
+              <input type="text" id="mManualSeat" class="m-input" placeholder="例：01 或 第 1 組" />
+            </div>
+            <div class="m-field">
+              <label class="m-sublabel" for="mManualName">姓名 / 組員 <span class="m-req">*</span></label>
+              <input type="text" id="mManualName" class="m-input" placeholder="請輸入你的姓名" />
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. Source Mode: File vs Cloud Link -->
+        <section class="m-card">
+          <label class="m-label">2. 選擇簡報提供方式 <span class="m-req">*</span></label>
+          <div class="m-source-switch">
+            <button type="button" class="m-source-btn active" data-msource="file">
+              <span class="m-source-ico">📁</span>
+              <span>上傳檔案<small>PDF / PPTX</small></span>
+            </button>
+            <button type="button" class="m-source-btn" data-msource="link">
+              <span class="m-source-ico">🔗</span>
+              <span>貼上連結<small>Canva / Google</small></span>
+            </button>
+          </div>
+
+          <!-- Panel A: File Upload -->
+          <div id="mFilePanel" class="m-panel">
+            <label for="mFileInput" id="mDropZone" class="m-file-picker">
+              <input type="file" id="mFileInput" class="m-file-hidden-input" />
+              <div id="mFilePrompt" class="m-file-prompt">
+                <div class="m-file-ico">📤</div>
+                <div class="m-file-title">點此選擇簡報檔案</div>
+                <div class="m-file-sub">支援 PDF、PowerPoint (.pptx / .ppt)</div>
+              </div>
+              <div id="mFileSelected" class="m-file-selected hidden">
+                <div class="m-file-badge" id="mFileIcon">📄</div>
+                <div class="m-file-meta">
+                  <div id="mFileName" class="m-file-name">file.pdf</div>
+                  <div id="mFileSize" class="m-file-size">1.2 MB</div>
+                </div>
+                <button type="button" id="mClearFileBtn" class="m-btn-mini">更換</button>
+              </div>
+            </label>
+
+            <div id="mProgressBox" class="m-progress-box hidden">
+              <div class="m-progress-head">
+                <span id="mProgressText">正在上傳...</span>
+                <span id="mProgressPct">0%</span>
+              </div>
+              <div class="m-progress-track">
+                <div id="mProgressFill" class="m-progress-fill" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel B: Cloud Link -->
+          <div id="mLinkPanel" class="m-panel hidden">
+            <label class="m-sublabel" for="mUrlInput">貼上簡報網址 (Canva / Google 簡報)</label>
+            <input type="url" id="mUrlInput" class="m-input" placeholder="https://..." />
+            <div id="mLinkDetectHint" class="m-link-hint">
+              💡 支援 Canva 分享連結、Google 簡報連結，系統會自動轉為全螢幕播放模式！
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Optional Topic / Note -->
+        <section class="m-card">
+          <label class="m-label">3. 簡報標題與備註 <span class="m-opt">(選填)</span></label>
+          <div class="m-field">
+            <input type="text" id="mTitleInput" class="m-input" placeholder="報告主題名稱（留空則自動顯示檔名）" />
+          </div>
+          <div class="m-field" style="margin-bottom:0">
+            <input type="text" id="mNoteInput" class="m-input" placeholder="備註說明（例：簡報內有影片需開聲音）" />
+          </div>
+        </section>
+
+        <button type="submit" id="mSubmitBtn" class="m-btn m-btn-primary m-submit-btn">
+          ✅ 確認上傳並送出
+        </button>
+      </form>
+    </main>
+
+    <!-- View 2: Class Submission Status List -->
+    <main id="mStatusView" class="m-main hidden">
+      <section class="m-card">
+        <div class="m-status-summary">
+          <div class="m-stat-pill">已上傳 <strong id="mStatSub">0</strong></div>
+          <div class="m-stat-pill warn">未上傳 <strong id="mStatUnsub">0</strong></div>
+          <div class="m-stat-pill done">已完成 <strong id="mStatDone">0</strong></div>
+        </div>
+        <div id="mRosterList" class="m-roster-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="mToast" class="m-toast hidden"></div>
+  <script src="/mobile.js"></script>
+</body>
+</html>

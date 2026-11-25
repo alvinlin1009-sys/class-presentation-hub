@@ -1,0 +1,6 @@
+bin/
+uploads/
+.git/
+node_modules/
+*.bat
+*.log

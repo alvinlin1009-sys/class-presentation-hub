@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>班級報告彙整中心 — 選擇班級與科目</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Top Navigation & Classroom Header -->
+  <header class="top-header">
+    <div class="header-left">
+      <div class="brand-logo" id="homeLogoBtn" title="返回選擇班級">🎓</div>
+      <div class="title-wrap">
+        <div class="title-row">
+          <h1 id="sessionTitleDisplay">班級報告彙整中心</h1>
+          <div id="navBreadcrumb" class="nav-breadcrumb hidden">
+            <button id="switchClassBtn" class="breadcrumb-pill" title="點擊切換班級">🏫 204班</button>
+            <span id="breadcrumbSep1" class="breadcrumb-sep">▸</span>
+            <button id="switchSubjectBtn" class="breadcrumb-pill pill-subject" title="點擊切換科目">📖 國文</button>
+            <span id="breadcrumbSep2" class="breadcrumb-sep">▸</span>
+            <button id="switchTopicBtn" class="breadcrumb-pill pill-topic" title="點擊切換報告項目">📝 第一次報告</button>
+          </div>
+          <span id="liveIndicator" class="live-badge" title="即時同步連線中">
+            <span class="pulse-dot"></span> 即時同步中
+          </span>
+        </div>
+        <p class="subtitle" id="headerSubtitleText">請先選擇班級與科目，即可進入各科簡報彙整與一鍵播放頁面</p>
+      </div>
+    </div>
+
+    <!-- Header Actions (Shown when inside Step 4 Board Screen) -->
+    <div id="boardHeaderActions" class="header-actions hidden">
+      <button id="backToTopicBtn" class="btn btn-roster">
+        <span>🔄</span>
+        <span>切換報告/科目</span>
+      </button>
+      <button id="openRosterModalBtn" class="btn btn-roster host-only-btn">
+        <span>📋</span>
+        <span>匯入/管理班級名單</span>
+      </button>
+      <button id="openQrModalBtn" class="btn btn-qr host-only-btn">
+        <span>📱</span>
+        <span>手機掃碼上傳</span>
+      </button>
+      <button id="openLotteryModalBtn" class="btn btn-lottery host-only-btn">
+        <span>🎲</span>
+        <span>抽籤決定順序</span>
+      </button>
+      <button id="openAddModalBtn" class="btn btn-primary btn-lg mobile-only-btn hidden">
+        <span>📤</span>
+        <span>選擇姓名上傳簡報</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== STEP 1: SELECT CLASS (選擇班級) ==================== -->
+  <section id="stepClassScreen" class="wizard-container">
+    <div class="wizard-card">
+      <div class="wizard-step-badge">STEP 1 / 3</div>
+      <h2 class="wizard-title">🏫 請選擇要進行報告的班級</h2>
+      <p class="wizard-desc">選擇班級後，接著選擇科目與報告項目</p>
+
+      <div id="classGridContainer" class="selector-grid class-grid">
+        <!-- Populated dynamically by app.js -->
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== STEP 2: SELECT SUBJECT (選擇科目) ==================== -->
+  <section id="stepSubjectScreen" class="wizard-container hidden">
+    <div class="wizard-card">
+      <div class="wizard-top-nav">
+        <button id="backToClassStepBtn" class="btn btn-outline btn-sm">⬅️ 返回重選班級</button>
+        <span class="wizard-current-class">目前班級：<strong id="selectedClassLabel">204班</strong></span>
+      </div>
+
+      <div class="wizard-step-badge">STEP 2 / 3</div>
+      <h2 class="wizard-title">📚 請選擇報告科目</h2>
+      <p class="wizard-desc">選擇科目（國、英、數、地、歷、公、化、物、生或自訂科目），下一步可選擇該科目的不同報告</p>
+
+      <div id="subjectGridContainer" class="selector-grid subject-grid">
+        <!-- Populated dynamically by app.js -->
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== STEP 3: SELECT REPORT TOPIC (選擇報告項目) ==================== -->
+  <section id="stepTopicScreen" class="wizard-container hidden">
+    <div class="wizard-card">
+      <div class="wizard-top-nav">
+        <button id="backToSubjectStepBtn" class="btn btn-outline btn-sm">⬅️ 返回重選科目</button>
+        <span class="wizard-current-class">
+          目前位置：<strong id="selectedTopicPathLabel">204班 ▸ 國文</strong>
+        </span>
+      </div>
+
+      <div class="wizard-step-badge">STEP 3 / 3</div>
+      <h2 class="wizard-title">📝 請選擇報告項目</h2>
+      <p class="wizard-desc">同一個科目下可以建立多個不同的報告（例如：第一次報告、期中專題、課文賞析等），各次報告獨立保存</p>
+
+      <div id="topicGridContainer" class="selector-grid class-grid">
+        <!-- Populated dynamically by app.js -->
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== STEP 4: PRESENTATION HUB BOARD (報告彙整頁面) ==================== -->
+  <main id="stepBoardScreen" class="main-container hidden">
+    <!-- Overview Bar: Upload & Report Progress + Quick QR Card -->
+    <section class="overview-grid">
+      <!-- Progress & Status Summary Card -->
+      <div class="summary-card">
+        <div class="summary-stats five-cols">
+          <div class="stat-item stat-total" data-filter="all">
+            <span class="stat-label">👥 全班人數</span>
+            <span class="stat-value" id="statTotal">0</span>
+          </div>
+          <div class="stat-item stat-unsubmitted" data-filter="unsubmitted">
+            <span class="stat-label">❌ 尚未上傳</span>
+            <span class="stat-value" id="statUnsubmitted">0</span>
+          </div>
+          <div class="stat-item stat-pending" data-filter="pending">
+            <span class="stat-label">📥 已上傳 (待報告)</span>
+            <span class="stat-value" id="statPending">0</span>
+          </div>
+          <div class="stat-item stat-presenting" data-filter="presenting">
+            <span class="stat-label">🎙️ 報告進行中</span>
+            <span class="stat-value" id="statPresenting">0</span>
+          </div>
+          <div class="stat-item stat-done" data-filter="done">
+            <span class="stat-label">✅ 已完成報告</span>
+            <span class="stat-value" id="statDone">0</span>
+          </div>
+        </div>
+
+        <div class="dual-progress-grid">
+          <div class="progress-section">
+            <div class="progress-labels">
+              <span>📤 本科簡報繳交進度</span>
+              <span id="uploadProgressSummaryText">已上傳 0 / 0 人 (0%)</span>
+            </div>
+            <div class="progress-track">
+              <div id="uploadSummaryBarFill" class="progress-fill fill-upload" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div class="progress-section">
+            <div class="progress-labels">
+              <span id="currentPresentingBanner">🎓 上台報告完成進度</span>
+              <span id="progressPercentText">已報告 0 / 0 人 (0%)</span>
+            </div>
+            <div class="progress-track">
+              <div id="progressBarFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mini QR & Quick Connection Card -->
+      <div class="qr-mini-card" id="qrMiniCard">
+        <div class="qr-mini-code" id="miniQrContainer" title="點擊放大 QR Code"></div>
+        <div class="qr-mini-info">
+          <div class="qr-mini-tag" id="miniQrTagText">同學手機掃碼上傳</div>
+          <div class="qr-mini-url" id="miniQrUrl">讀取連線網址中...</div>
+          <div class="qr-mini-actions">
+            <button id="copyUrlBtn" class="btn btn-xs btn-outline">複製網址</button>
+            <button id="expandQrBtn" class="btn btn-xs btn-outline">放大 QR Code</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Filter, Sort & Management Toolbar -->
+    <section class="toolbar">
+      <div class="filter-tabs" role="tablist">
+        <button class="filter-tab active" data-filter="all">全部名單 (<span id="tabCountAll">0</span>)</button>
+        <button class="filter-tab tab-alert" data-filter="unsubmitted">❌ 尚未上傳 (<span id="tabCountUnsubmitted">0</span>)</button>
+        <button class="filter-tab" data-filter="submitted">✅ 已上傳簡報 (<span id="tabCountSubmitted">0</span>)</button>
+        <button class="filter-tab" data-filter="pending">⏳ 待報告 (<span id="tabCountPending">0</span>)</button>
+        <button class="filter-tab" data-filter="presenting">🎙️ 進行中 (<span id="tabCountPresenting">0</span>)</button>
+        <button class="filter-tab" data-filter="done">🏁 已完成 (<span id="tabCountDone">0</span>)</button>
+      </div>
+
+      <div class="toolbar-controls">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" placeholder="搜尋座號、姓名或簡報檔名..." />
+        </div>
+
+        <div class="sort-box">
+          <label for="sortSelect">排序：</label>
+          <select id="sortSelect">
+            <option value="order">🎯 依報告順序 (可拖曳/抽籤)</option>
+            <option value="seat_asc">🔢 依座號/組別 (小 → 大)</option>
+            <option value="seat_desc">🔢 依座號/組別 (大 → 小)</option>
+            <option value="uploaded_first">📥 已上傳優先顯示</option>
+            <option value="unsubmitted_first">❌ 尚未上傳優先顯示</option>
+          </select>
+        </div>
+
+        <div class="dropdown-wrap">
+          <button id="manageMenuBtn" class="btn btn-outline">⚙️ 批次管理 ▾</button>
+          <div id="manageDropdown" class="dropdown-menu hidden">
+            <button id="renameCurrentTopicBtn" class="dropdown-item">✏️ 重新命名本次報告項目</button>
+            <button id="openRosterFromMenuBtn" class="dropdown-item">📋 匯入 / 管理班級座號與名單</button>
+            <button id="sortSaveSeatBtn" class="dropdown-item">🔢 將「座號小到大」設為預設報告順序</button>
+            <button id="resetAllStatusBtn" class="dropdown-item">🔄 重置本次報告狀態（保留已上傳簡報）</button>
+            <hr class="dropdown-divider" />
+            <button id="newRoundBtn" class="dropdown-item text-warning">🧹 清空本次舊簡報（開啟新一輪報告，保留名單）</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Presentations / Class Roster Grid -->
+    <section id="presentationsContainer" class="presentations-grid">
+      <!-- Populated dynamically by app.js -->
+    </section>
+
+    <!-- Empty State -->
+    <section id="emptyState" class="empty-state hidden">
+      <div class="empty-illustration">📋</div>
+      <h2>目前尚未建立全班名單</h2>
+      <p>請先點選下方按鈕匯入班級座號與姓名，大家就能直接點自己的名字上傳簡報！</p>
+      <div class="empty-actions">
+        <button id="emptyRosterBtn" class="btn btn-primary btn-lg">📋 立即匯入班級名單</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==================== MODAL 1: Upload / Edit Student Presentation ==================== -->
+  <div id="addEditModal" class="modal-backdrop hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h2 id="modalFormTitle">📤 上傳 / 設定報告簡報</h2>
+        <button class="modal-close" data-close="addEditModal">✕</button>
+      </div>
+
+      <form id="presentationForm" class="modal-body">
+        <input type="hidden" id="editItemId" value="" />
+
+        <!-- Student Selector Box -->
+        <div id="studentPickerSection" class="student-picker-box">
+          <label for="studentSelectDropdown">👤 請選擇你的座號與姓名 <span class="required">*</span></label>
+          <select id="studentSelectDropdown" class="student-select"></select>
+        </div>
+
+        <!-- Shown when editing name or adding a new person not on roster -->
+        <div id="manualStudentFields" class="form-row two-cols hidden">
+          <div class="form-group">
+            <label for="inputGroupOrSeat">座號 / 組別 <span class="hint">(例：01、第 1 組)</span></label>
+            <input type="text" id="inputGroupOrSeat" placeholder="例如：01 或 第 1 組" />
+          </div>
+          <div class="form-group">
+            <label for="inputPresenterName">姓名 / 組員 <span class="required">*</span></label>
+            <input type="text" id="inputPresenterName" placeholder="例如：王鵬睿" />
+          </div>
+        </div>
+
+        <!-- Source Mode Selector: Upload File vs Paste Link -->
+        <div class="form-group">
+          <label>簡報提供方式 <span class="required">*</span></label>
+          <div class="source-tabs">
+            <button type="button" class="source-tab active" data-source="file">
+              <span class="source-tab-icon">📁</span>
+              <div>
+                <div class="source-tab-title">上傳簡報檔案</div>
+                <div class="source-tab-desc">PDF 檔、PowerPoint (.pptx / .ppt) — 檔名不限</div>
+              </div>
+            </button>
+            <button type="button" class="source-tab" data-source="link">
+              <span class="source-tab-icon">🔗</span>
+              <div>
+                <div class="source-tab-title">貼上雲端簡報連結</div>
+                <div class="source-tab-desc">Canva、Google 簡報、Gamma、其他網址</div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Panel A: File Upload -->
+        <div id="fileSourcePanel" class="source-panel">
+          <label for="fileInput" id="dropZone" class="drop-zone">
+            <input type="file" id="fileInput" class="drop-zone-file-input" />
+            <div class="drop-zone-content" id="dropZonePrompt">
+              <div class="drop-icon">📤</div>
+              <div class="drop-title">點擊選擇檔案，或將簡報拖曳至此處</div>
+              <div class="drop-subtitle">支援 <strong>.pdf</strong>、<strong>.pptx</strong>、<strong>.ppt</strong>（檔名不一致沒關係，會自動綁定在你的名字下！）</div>
+            </div>
+            <div id="selectedFileInfo" class="selected-file-info hidden">
+              <span id="selectedFileIcon" class="file-badge-icon">📄</span>
+              <div class="selected-file-text">
+                <div id="selectedFileName" class="selected-file-name">filename.pptx</div>
+                <div id="selectedFileSize" class="selected-file-size">2.4 MB</div>
+              </div>
+              <button type="button" id="removeFileBtn" class="btn btn-xs btn-outline">更換檔案</button>
+            </div>
+          </label>
+
+          <!-- Upload Progress -->
+          <div id="uploadProgressWrap" class="upload-progress-wrap hidden">
+            <div class="upload-progress-label">
+              <span id="uploadProgressStatus">正在上傳檔案...</span>
+              <span id="uploadProgressPercent">0%</span>
+            </div>
+            <div class="progress-track">
+              <div id="uploadProgressBar" class="progress-fill" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- File Opening Preference -->
+          <div id="fileOpenModeGroup" class="open-mode-box">
+            <label class="open-mode-label">💡 上台點選按鍵時的開啟方式：</label>
+            <div class="radio-group" id="fileOpenModeRadios">
+              <label class="radio-card">
+                <input type="radio" name="fileOpenMode" value="auto" checked />
+                <span><strong>智慧全螢幕開啟 (推薦)</strong>：PDF 直接在網頁全螢幕播放；PPTX 直接呼叫電腦 PowerPoint 全螢幕放映</span>
+              </label>
+              <label class="radio-card">
+                <input type="radio" name="fileOpenMode" value="powerpoint_normal" />
+                <span><strong>以電腦預設程式一般視窗開啟</strong>（開啟 PowerPoint 視窗，再手動按放映）</span>
+              </label>
+              <label class="radio-card">
+                <input type="radio" name="fileOpenMode" value="newtab" />
+                <span><strong>在瀏覽器新分頁開啟 / 下載檔案</strong></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel B: Cloud Link (Canva / Google Slides / etc.) -->
+        <div id="linkSourcePanel" class="source-panel hidden">
+          <div class="form-group">
+            <label for="inputUrl">簡報網址 (URL) <span class="required">*</span></label>
+            <input type="url" id="inputUrl" placeholder="貼上 Canva 分享連結、Google 簡報網址或其他網頁連結..." />
+            <div id="detectedLinkBadge" class="detected-link-hint">
+              💡 支援直接貼上 Canva 檢視/編輯連結、Google 簡報編輯/播放連結，系統會自動轉換！
+            </div>
+          </div>
+
+          <div class="open-mode-box">
+            <label class="open-mode-label">💡 上台點選按鍵時的播放方式：</label>
+            <div class="radio-group">
+              <label class="radio-card">
+                <input type="radio" name="linkOpenMode" value="embed" checked />
+                <span><strong>網頁內直接全螢幕預覽 (推薦)</strong>：不跳出系統，直接全螢幕播放（請確認 Canva / Google 簡報權限設為「知道連結的任何人皆可檢視」）</span>
+              </label>
+              <label class="radio-card">
+                <input type="radio" name="linkOpenMode" value="newtab" />
+                <span><strong>開啟新分頁全螢幕播放</strong>：適合私人權限簡報（已在講台電腦登入自己的帳號）</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row two-cols">
+          <div class="form-group">
+            <label for="inputTitle">報告主題名稱 <span class="hint">(選填，留空則自動顯示檔名或簡報類型)</span></label>
+            <input type="text" id="inputTitle" placeholder="選填，例如：期末專題報告" />
+          </div>
+          <div class="form-group">
+            <label for="inputNote">備註說明 <span class="hint">(選填，例：需開聲音)</span></label>
+            <input type="text" id="inputNote" placeholder="選填，例如：有影片需開喇叭" />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="toggleEditNameBtn" class="btn btn-outline" style="margin-right:auto">✏️ 修改座號/姓名</button>
+          <button type="button" class="btn btn-outline" data-close="addEditModal">取消</button>
+          <button type="submit" id="submitPresentationBtn" class="btn btn-primary btn-lg">✅ 確認上傳並儲存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 2: Class Roster Manager (匯入/管理班級座號與姓名) ==================== -->
+  <div id="rosterModal" class="modal-backdrop hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h2 id="rosterModalTitle">📋 匯入 / 管理班級座號與姓名</h2>
+        <button class="modal-close" data-close="rosterModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="roster-intro">
+          支援直接從 <strong>Excel 複製貼上</strong>（如 <code>1	王鵬睿</code>）、上傳 <strong>.csv / .txt 名單檔</strong>，或一鍵載入 <strong>204 班預設名單</strong>！
+        </p>
+
+        <div class="roster-quick-gen">
+          <button type="button" class="btn btn-xs btn-primary" id="load204RosterBtn">🎓 一鍵載入 204 班名單 (1~35號)</button>
+          <button type="button" class="btn btn-xs btn-outline" id="uploadRosterFileBtn">📂 從檔案匯入 (.txt / .csv)</button>
+          <input type="file" id="rosterFileInput" accept=".txt,.csv,.tsv" hidden />
+          <button type="button" class="btn btn-xs btn-outline" id="exportRosterCsvBtn">📥 匯出目前名單 (.csv)</button>
+          <button type="button" class="btn btn-xs btn-outline" data-gen="seats-30">🔢 產生座號範本</button>
+          <button type="button" class="btn btn-xs btn-outline" data-gen="groups-10">👥 產生組別範本</button>
+        </div>
+
+        <div class="form-row two-cols">
+          <div class="form-group">
+            <label for="rosterTextarea">
+              貼上或編輯座號與姓名 <span class="hint">（每行一位，Tab、空白或逗號分隔皆可）</span>
+            </label>
+            <textarea
+              id="rosterTextarea"
+              rows="11"
+              class="roster-textarea"
+              placeholder="1	王鵬睿&#10;2	田浩嚴&#10;3	吳泉孟&#10;..."
+            ></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>
+              即時辨識預覽 <span id="rosterParsedCountBadge" class="parsed-count-badge">共 0 人</span>
+            </label>
+            <div id="rosterLivePreviewBox" class="roster-preview-box"></div>
+          </div>
+        </div>
+
+        <div class="roster-import-mode">
+          <label class="radio-card">
+            <input type="radio" name="rosterImportMode" value="smart_sync" checked />
+            <span><strong>🔄 智慧同步更新名單 (推薦)</strong>：套用上方座號與姓名，若同學已經上傳過簡報，會<strong>自動保留已上傳的簡報檔案</strong>！</span>
+          </label>
+          <label class="radio-card">
+            <input type="radio" name="rosterImportMode" value="replace" />
+            <span><strong>🆕 完全覆蓋並重置為新名單</strong>：取代目前名單，並將所有人重設為「❌ 尚未上傳」（清除舊簡報）</span>
+          </label>
+          <label class="radio-card">
+            <input type="radio" name="rosterImportMode" value="append" />
+            <span><strong>➕ 附加在現有名單後面</strong>：保留目前所有名單，將上方人員新增至最後面</span>
+          </label>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="rosterModal">取消</button>
+          <button type="button" id="saveRosterBtn" class="btn btn-primary btn-lg">💾 確認匯入並套用名單</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 3: QR Code & Connection Info ==================== -->
+  <div id="qrModal" class="modal-backdrop hidden">
+    <div class="modal-card modal-qr">
+      <div class="modal-header">
+        <h2>📱 掃描 QR Code 上傳報告簡報</h2>
+        <button class="modal-close" data-close="qrModal">✕</button>
+      </div>
+      <div class="modal-body qr-modal-body">
+        <p class="qr-instruction" id="qrModalInstruction">請同學掃描下方 QR Code，即可直接進入該班級與科目上傳檔案或貼上連結：</p>
+
+        <div id="largeQrContainer" class="large-qr-box"></div>
+
+        <select id="networkUrlSelect" class="url-select hidden"></select>
+
+        <div class="qr-url-banner">
+          <code id="largeQrUrlText">正在建立跨網路公開上傳網址...</code>
+          <button id="modalCopyUrlBtn" class="btn btn-sm btn-primary">複製網址</button>
+        </div>
+
+        <div class="tunnel-box">
+          <div class="tunnel-info">
+            <strong>🌐 已啟用跨網路公開上傳網址（手機 4G/5G 或任何網路皆可直接掃碼）</strong>
+            <p>掃描上方 QR Code 後將自動跳轉至「同學簡報上傳介面」：</p>
+          </div>
+          <div class="tunnel-actions">
+            <span id="tunnelStatusText" class="tunnel-status-text"></span>
+            <button id="toggleTunnelBtn" class="btn btn-sm btn-outline">🔄 重新整理跨網路通道</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 4: Lottery / Order Shuffle ==================== -->
+  <div id="lotteryModal" class="modal-backdrop hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h2>🎲 報告順序抽籤機</h2>
+        <button class="modal-close" data-close="lotteryModal">✕</button>
+      </div>
+      <div class="modal-body lottery-body">
+        <div class="lottery-tabs">
+          <button class="lottery-tab active" data-ltab="single">🎯 隨機抽出下一位報告者</button>
+          <button class="lottery-tab" data-ltab="shuffle">🔀 全班報告順序大洗牌</button>
+        </div>
+
+        <!-- Tab 1: Pick single next group -->
+        <div id="lotterySinglePanel" class="lottery-panel">
+          <div class="shuffle-options">
+            <label class="checkbox-label">
+              <input type="checkbox" id="lotteryOnlySubmitted" checked />
+              <span>僅從「📥 已上傳簡報且尚未報告」的名單中抽取（勾選可避免抽到還沒交檔案的人）</span>
+            </label>
+          </div>
+          <div id="slotMachineBox" class="slot-machine">
+            <div id="slotDisplayGroup" class="slot-group">準備抽籤</div>
+            <div id="slotDisplayName" class="slot-name">點擊下方按鈕開始滾動</div>
+            <div id="slotDisplayTitle" class="slot-title"></div>
+          </div>
+
+          <div class="lottery-actions">
+            <button id="spinSingleBtn" class="btn btn-lottery btn-xl">🎰 開始隨機抽選！</button>
+            <button id="startWinnerBtn" class="btn btn-primary btn-xl hidden">🚀 立即開啟他的簡報！</button>
+          </div>
+        </div>
+
+        <!-- Tab 2: Shuffle all order -->
+        <div id="lotteryShufflePanel" class="lottery-panel hidden">
+          <p class="lottery-desc">將全班隨機打亂，自動重新編排 <code>#1, #2, #3...</code> 報告順序並同步至全班畫面！</p>
+          <div class="shuffle-options">
+            <label class="checkbox-label">
+              <input type="checkbox" id="shuffleKeepDoneFirst" checked />
+              <span>將「✅ 已上傳簡報」的人排在前面並隨機洗牌，「❌ 尚未上傳」排在後面</span>
+            </label>
+          </div>
+          <div id="shufflePreviewList" class="shuffle-preview-list"></div>
+          <div class="lottery-actions">
+            <button id="runShuffleBtn" class="btn btn-lottery btn-xl">🔀 立即隨機洗牌並套用順序</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== FULLSCREEN PRESENTATION VIEWER OVERLAY ==================== -->
+  <div id="viewerOverlay" class="viewer-overlay hidden">
+    <div id="viewerTopBar" class="viewer-topbar">
+      <div class="viewer-info">
+        <span id="viewerBadge" class="badge">01</span>
+        <strong id="viewerPresenter">王鵬睿</strong>
+        <span id="viewerTitle" class="viewer-presenter">— 簡報標題</span>
+      </div>
+
+      <div class="viewer-controls">
+        <button id="viewerReloadBtn" class="btn btn-xs btn-viewer" title="重新載入簡報畫面">🔄 重新載入</button>
+        <button id="viewerOpenNewTabBtn" class="btn btn-xs btn-viewer" title="若因權限無法內嵌顯示，可點此在新分頁開啟">↗️ 改用新分頁開啟</button>
+        <button id="viewerFullscreenBtn" class="btn btn-xs btn-viewer">⛶ 全螢幕 (F11)</button>
+        <button id="viewerCompleteNextBtn" class="btn btn-xs btn-success">✅ 完成報告並回清單</button>
+        <button id="viewerCloseBtn" class="btn btn-xs btn-danger">✕ 關閉預覽</button>
+      </div>
+    </div>
+
+    <div class="viewer-stage">
+      <iframe
+        id="viewerIframe"
+        src="about:blank"
+        allow="fullscreen; autoplay; clipboard-write; encrypted-media; picture-in-picture"
+        allowfullscreen
+      ></iframe>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="/qrcode.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
